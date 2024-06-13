@@ -23,9 +23,10 @@ import (
 func OneClicks() *Command {
 	cmd := &Command{
 		Command: &cobra.Command{
-			Use:   "1-click",
-			Short: "Display commands that pertain to 1-click applications",
-			Long:  "The commands under `doctl 1-click` are for interacting with DigitalOcean 1-Click applications.",
+			Use:     "1-click",
+			Short:   "Display commands that pertain to 1-click applications",
+			Long:    "The commands under `doctl 1-click` are for interacting with DigitalOcean 1-Click applications.",
+			GroupID: manageResourcesGroup,
 		},
 	}
 
@@ -33,6 +34,7 @@ func OneClicks() *Command {
 		aliasOpt("ls"), displayerType(&displayers.OneClick{}))
 
 	AddStringFlag(cmdOneClickList, doctl.ArgOneClickType, "", "", "The 1-Click type. Valid types are one of the following: kubernetes, droplet")
+	cmdOneClickList.Example = `The following example retrieves a list of 1-Click applications available for Droplets: doctl 1-click list --type droplet`
 
 	return cmd
 }

@@ -23,7 +23,7 @@ import (
 type AppsService interface {
 	Create(req *godo.AppCreateRequest) (*godo.App, error)
 	Get(appID string) (*godo.App, error)
-	List() ([]*godo.App, error)
+	List(withProjects bool) ([]*godo.App, error)
 	Update(appID string, req *godo.AppUpdateRequest) (*godo.App, error)
 	Delete(appID string) error
 	Propose(req *godo.AppProposeRequest) (*godo.AppProposeResponse, error)
@@ -32,7 +32,7 @@ type AppsService interface {
 	GetDeployment(appID, deploymentID string) (*godo.Deployment, error)
 	ListDeployments(appID string) ([]*godo.Deployment, error)
 
-	GetLogs(appID, deploymentID, component string, logType godo.AppLogType, follow bool) (*godo.AppLogs, error)
+	GetLogs(appID, deploymentID, component string, logType godo.AppLogType, follow bool, tail int) (*godo.AppLogs, error)
 
 	ListRegions() ([]*godo.AppRegion, error)
 
@@ -41,6 +41,12 @@ type AppsService interface {
 
 	ListInstanceSizes() ([]*godo.AppInstanceSize, error)
 	GetInstanceSize(slug string) (*godo.AppInstanceSize, error)
+
+	ListAlerts(appID string) ([]*godo.AppAlert, error)
+	UpdateAlertDestinations(appID, alertID string, update *godo.AlertDestinationUpdateRequest) (*godo.AppAlert, error)
+
+	ListBuildpacks() ([]*godo.Buildpack, error)
+	UpgradeBuildpack(appID string, options godo.UpgradeBuildpackOptions) (affectedComponents []string, deployment *godo.Deployment, err error)
 }
 
 type appsService struct {
@@ -74,14 +80,15 @@ func (s *appsService) Get(appID string) (*godo.App, error) {
 	return app, nil
 }
 
-func (s *appsService) List() ([]*godo.App, error) {
-	f := func(opt *godo.ListOptions) ([]interface{}, *godo.Response, error) {
+func (s *appsService) List(withProjects bool) ([]*godo.App, error) {
+	f := func(opt *godo.ListOptions) ([]any, *godo.Response, error) {
+		opt.WithProjects = withProjects
 		list, resp, err := s.client.Apps.List(s.ctx, opt)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		si := make([]interface{}, 0, len(list))
+		si := make([]any, 0, len(list))
 		for _, item := range list {
 			si = append(si, item)
 		}
@@ -143,13 +150,13 @@ func (s *appsService) GetDeployment(appID, deploymentID string) (*godo.Deploymen
 }
 
 func (s *appsService) ListDeployments(appID string) ([]*godo.Deployment, error) {
-	f := func(opt *godo.ListOptions) ([]interface{}, *godo.Response, error) {
+	f := func(opt *godo.ListOptions) ([]any, *godo.Response, error) {
 		list, resp, err := s.client.Apps.ListDeployments(s.ctx, appID, opt)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		si := make([]interface{}, 0, len(list))
+		si := make([]any, 0, len(list))
 		for _, item := range list {
 			si = append(si, item)
 		}
@@ -171,8 +178,8 @@ func (s *appsService) ListDeployments(appID string) ([]*godo.Deployment, error) 
 	return list, nil
 }
 
-func (s *appsService) GetLogs(appID, deploymentID, component string, logType godo.AppLogType, follow bool) (*godo.AppLogs, error) {
-	logs, _, err := s.client.Apps.GetLogs(s.ctx, appID, deploymentID, component, logType, follow)
+func (s *appsService) GetLogs(appID, deploymentID, component string, logType godo.AppLogType, follow bool, tail int) (*godo.AppLogs, error) {
+	logs, _, err := s.client.Apps.GetLogs(s.ctx, appID, deploymentID, component, logType, follow, tail)
 	if err != nil {
 		return nil, err
 	}
@@ -217,4 +224,36 @@ func (s *appsService) GetInstanceSize(slug string) (*godo.AppInstanceSize, error
 		return nil, err
 	}
 	return instanceSize, nil
+}
+
+func (s *appsService) ListAlerts(appID string) ([]*godo.AppAlert, error) {
+	alerts, _, err := s.client.Apps.ListAlerts(s.ctx, appID)
+	if err != nil {
+		return nil, err
+	}
+	return alerts, nil
+}
+
+func (s *appsService) UpdateAlertDestinations(appID, alertID string, update *godo.AlertDestinationUpdateRequest) (*godo.AppAlert, error) {
+	alert, _, err := s.client.Apps.UpdateAlertDestinations(s.ctx, appID, alertID, update)
+	if err != nil {
+		return nil, err
+	}
+	return alert, nil
+}
+
+func (s *appsService) ListBuildpacks() ([]*godo.Buildpack, error) {
+	bps, _, err := s.client.Apps.ListBuildpacks(s.ctx)
+	if err != nil {
+		return nil, err
+	}
+	return bps, nil
+}
+
+func (s *appsService) UpgradeBuildpack(appID string, options godo.UpgradeBuildpackOptions) ([]string, *godo.Deployment, error) {
+	res, _, err := s.client.Apps.UpgradeBuildpack(s.ctx, appID, options)
+	if err != nil {
+		return nil, nil, err
+	}
+	return res.AffectedComponents, res.Deployment, nil
 }

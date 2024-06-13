@@ -14,6 +14,7 @@ limitations under the License.
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -28,9 +29,15 @@ import (
 type Command struct {
 	*cobra.Command
 
+	*cobra.Group
+
 	fmtCols []string
 
 	childCommands []*Command
+
+	// overrideNS specifies a namespace to use in config.
+	// Set using the overrideCmdNS cmdOption when calling CmdBuilder
+	overrideNS string
 }
 
 // AddCommand adds child commands and adds child commands for cobra as well.
@@ -46,6 +53,19 @@ func (c *Command) ChildCommands() []*Command {
 	return c.childCommands
 }
 
+type ValidArgsFunc func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective)
+
+// AddValidArgsFunc sets the function to run for dynamic completions
+// ValidArgsFunc and ValidArgs are mutually exclusive. This function will
+// return an error if ValidArgs is already set.
+func (c *Command) AddValidArgsFunc(fn ValidArgsFunc) error {
+	if len(c.Command.ValidArgs) == 0 {
+		c.Command.ValidArgsFunction = fn
+		return nil
+	}
+	return errors.New("unable to add ValidArgsFunction when ValidArgs is already set")
+}
+
 // CmdBuilder builds a new command.
 func CmdBuilder(parent *Command, cr CmdRunner, cliText, shortdesc string, longdesc string, out io.Writer, options ...cmdOption) *Command {
 	return cmdBuilderWithInit(parent, cr, cliText, shortdesc, longdesc, out, true, options...)
@@ -56,19 +76,6 @@ func cmdBuilderWithInit(parent *Command, cr CmdRunner, cliText, shortdesc string
 		Use:   cliText,
 		Short: shortdesc,
 		Long:  longdesc,
-		Run: func(cmd *cobra.Command, args []string) {
-			c, err := NewCmdConfig(
-				cmdNS(cmd),
-				&doctl.LiveConfig{},
-				out,
-				args,
-				initCmd,
-			)
-			checkErr(err)
-
-			err = cr(c)
-			checkErr(err)
-		},
 	}
 
 	c := &Command{Command: cc}
@@ -81,8 +88,24 @@ func cmdBuilderWithInit(parent *Command, cr CmdRunner, cliText, shortdesc string
 		co(c)
 	}
 
+	// This must be defined after the options have been applied
+	// so that changes made by the options are accessible here.
+	c.Command.Run = func(cmd *cobra.Command, args []string) {
+		c, err := NewCmdConfig(
+			cmdNS(c),
+			&doctl.LiveConfig{},
+			out,
+			args,
+			initCmd,
+		)
+		checkErr(err)
+
+		err = cr(c)
+		checkErr(err)
+	}
+
 	if cols := c.fmtCols; cols != nil {
-		formatHelp := fmt.Sprintf("Columns for output in a comma-separated list. Possible values: `%s`",
+		formatHelp := fmt.Sprintf("Columns for output in a comma-separated list. Possible values: `%s`.",
 			strings.Join(cols, "`"+", "+"`"))
 		AddStringFlag(c, doctl.ArgFormat, "", "", formatHelp)
 		AddBoolFlag(c, doctl.ArgNoHeader, "", false, "Return raw data with no headers")

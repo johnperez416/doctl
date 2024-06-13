@@ -59,9 +59,8 @@ func (i *InvoiceSummary) ColMap() map[string]string {
 	}
 }
 
-func (i *InvoiceSummary) KV() []map[string]interface{} {
-	out := []map[string]interface{}{}
-	x := map[string]interface{}{
+func (i *InvoiceSummary) KV() []map[string]any {
+	x := map[string]any{
 		"InvoiceUUID":           i.InvoiceSummary.InvoiceUUID,
 		"BillingPeriod":         i.InvoiceSummary.BillingPeriod,
 		"Amount":                i.InvoiceSummary.Amount,
@@ -73,7 +72,6 @@ func (i *InvoiceSummary) KV() []map[string]interface{} {
 		"Taxes":                 i.InvoiceSummary.Taxes.Amount,
 		"CreditsAndAdjustments": i.InvoiceSummary.CreditsAndAdjustments.Amount,
 	}
-	out = append(out, x)
 
-	return out
+	return []map[string]any{x}
 }

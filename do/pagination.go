@@ -29,25 +29,43 @@ var perPage = 200
 var fetchFn = fetchPage
 
 type paginatedList struct {
-	list []interface{}
-	mu   sync.Mutex
+	list  [][]any
+	total int
+	mu    sync.Mutex
 }
 
-func (pl *paginatedList) append(items ...interface{}) {
+func (pl *paginatedList) set(page int, items []any) {
 	pl.mu.Lock()
 	defer pl.mu.Unlock()
-
-	pl.list = append(pl.list, items...)
+	pl.total += len(items)
+	pl.list[page-1] = items
 }
 
 // Generator is a function that generates the list to be paginated.
-type Generator func(*godo.ListOptions) ([]interface{}, *godo.Response, error)
+type Generator func(*godo.ListOptions) ([]any, *godo.Response, error)
 
 // PaginateResp paginates a Response.
-func PaginateResp(gen Generator) ([]interface{}, error) {
+func PaginateResp(gen Generator) ([]any, error) {
 	opt := &godo.ListOptions{Page: 1, PerPage: perPage}
 
-	l := paginatedList{}
+	// fetch first page to get page count (x)
+	firstPage, resp, err := gen(opt)
+	if err != nil {
+		return nil, err
+	}
+
+	// find last page
+	lp, err := lastPage(resp)
+	if err != nil {
+		return nil, err
+	}
+
+	l := paginatedList{
+		list: make([][]any, lp),
+	}
+
+	// set results from the first page
+	l.set(1, firstPage)
 
 	fetchChan := make(chan int, maxFetchPages)
 
@@ -58,25 +76,11 @@ func PaginateResp(gen Generator) ([]interface{}, error) {
 			for page := range fetchChan {
 				items, err := fetchFn(gen, page)
 				if err == nil {
-					l.append(items...)
+					l.set(page, items)
 				}
 			}
 			wg.Done()
 		}()
-	}
-
-	// fetch first page to get page count (x)
-	items, resp, err := gen(opt)
-	if err != nil {
-		return nil, err
-	}
-
-	l.append(items...)
-
-	// find last page
-	lp, err := lastPage(resp)
-	if err != nil {
-		return nil, err
 	}
 
 	// start with second page
@@ -88,10 +92,22 @@ func PaginateResp(gen Generator) ([]interface{}, error) {
 
 	wg.Wait()
 
-	return l.list, nil
+	// flatten paginated list
+	items := make([]any, l.total)[:0]
+	for _, page := range l.list {
+		if page == nil {
+			// must have been an error getting page results
+			continue
+		}
+		for _, item := range page {
+			items = append(items, item)
+		}
+	}
+
+	return items, nil
 }
 
-func fetchPage(gen Generator, page int) ([]interface{}, error) {
+func fetchPage(gen Generator, page int) ([]any, error) {
 	opt := &godo.ListOptions{Page: page, PerPage: perPage}
 	items, _, err := gen(opt)
 	return items, err

@@ -36,16 +36,28 @@ const (
 	ArgActionType = "action-type"
 	// ArgApp is the app ID.
 	ArgApp = "app"
+	// ArgAppWithProjects will determine whether project ids should be fetched along with listed apps.
+	ArgAppWithProjects = "with-projects"
 	// ArgAppSpec is a path to an app spec.
 	ArgAppSpec = "spec"
 	// ArgAppLogType the type of log.
 	ArgAppLogType = "type"
 	// ArgAppDeployment is the deployment ID.
 	ArgAppDeployment = "deployment"
+	// ArgAppDevConfig is the path to the app dev link config.
+	ArgAppDevConfig = "dev-config"
+	// ArgBuildCommand is an optional build command to set for local development.
+	ArgBuildCommand = "build-command"
+	// ArgBuildpack is a buildpack id.
+	ArgBuildpack = "buildpack"
 	// ArgAppLogFollow follow logs.
 	ArgAppLogFollow = "follow"
+	// ArgAppLogTail tail logs.
+	ArgAppLogTail = "tail"
 	// ArgAppForceRebuild forces a deployment rebuild
 	ArgAppForceRebuild = "force-rebuild"
+	// ArgAppAlertDestinations is a path to an app alert destination file.
+	ArgAppAlertDestinations = "app-alert-destinations"
 	// ArgClusterName is a cluster name argument.
 	ArgClusterName = "cluster-name"
 	// ArgClusterVersionSlug is a cluster version argument.
@@ -58,6 +70,8 @@ const (
 	ArgClusterNodePool = "node-pool"
 	// ArgClusterUpdateKubeconfig updates the local kubeconfig.
 	ArgClusterUpdateKubeconfig = "update-kubeconfig"
+	// ArgNoCache represents whether or not to omit the cache on the next command.
+	ArgNoCache = "no-cache"
 	// ArgNodePoolName is a cluster's node pool name argument.
 	ArgNodePoolName = "name"
 	// ArgNodePoolCount is a cluster's node pool count argument.
@@ -72,10 +86,16 @@ const (
 	ArgNodePoolNodeIDs = "node-ids"
 	// ArgMaintenanceWindow is a cluster's maintenance window argument
 	ArgMaintenanceWindow = "maintenance-window"
+	// ArgMajorVersion is a major version number.
+	ArgMajorVersion = "major-version"
 	// ArgAutoUpgrade is a cluster's auto-upgrade argument.
 	ArgAutoUpgrade = "auto-upgrade"
+	// ArgHA is a cluster's highly available control plane argument.
+	ArgHA = "ha"
 	// ArgSurgeUpgrade is a cluster's surge-upgrade argument.
 	ArgSurgeUpgrade = "surge-upgrade"
+	// ArgCommandUpsert is an upsert for a resource to be created or updated argument.
+	ArgCommandUpsert = "upsert"
 	// ArgCommandWait is a wait for a resource to be created argument.
 	ArgCommandWait = "wait"
 	// ArgSetCurrentContext is a flag to set the new kubeconfig context as current.
@@ -84,12 +104,14 @@ const (
 	ArgDropletID = "droplet-id"
 	// ArgDropletIDs is a list of droplet IDs.
 	ArgDropletIDs = "droplet-ids"
-	// ArgKernelID is a ekrnel id argument.
+	// ArgKernelID is a kernel id argument.
 	ArgKernelID = "kernel-id"
 	// ArgKubernetesLabel is a Kubernetes label argument.
 	ArgKubernetesLabel = "label"
 	// ArgKubernetesTaint is a Kubernetes taint argument.
 	ArgKubernetesTaint = "taint"
+	// ArgKubernetesAlias is a Kubernetes alias argument that saves authentication information under the specified context.
+	ArgKubernetesAlias = "alias"
 	// ArgKubeConfigExpirySeconds indicates the length of time the token in a kubeconfig will be valid in seconds.
 	ArgKubeConfigExpirySeconds = "expiry-seconds"
 	// ArgImage is an image argument.
@@ -98,12 +120,16 @@ const (
 	ArgImageID = "image-id"
 	// ArgImagePublic is a public image argument.
 	ArgImagePublic = "public"
-	// ArgImageSlug is an image slug argment.
+	// ArgImageSlug is an image slug argument.
 	ArgImageSlug = "image-slug"
+	// ArgInteractive is the argument to enable an interactive CLI.
+	ArgInteractive = "interactive"
 	// ArgIPAddress is an IP address argument.
 	ArgIPAddress = "ip-address"
 	// ArgDropletName is a droplet name argument.
 	ArgDropletName = "droplet-name"
+	// ArgEnvFile is an environment file to load variables from.
+	ArgEnvFile = "env-file"
 	// ArgResizeDisk is a resize disk argument.
 	ArgResizeDisk = "resize-disk"
 	// ArgSnapshotName is a snapshot name argument.
@@ -120,6 +146,8 @@ const (
 	ArgPrivateNetworking = "enable-private-networking"
 	// ArgMonitoring is an enable monitoring argument.
 	ArgMonitoring = "enable-monitoring"
+	// ArgDropletAgent is an argument for enabling/disabling the Droplet agent.
+	ArgDropletAgent = "droplet-agent"
 	// ArgRecordData is a record data argument.
 	ArgRecordData = "record-data"
 	// ArgRecordID is a record id argument.
@@ -146,6 +174,8 @@ const (
 	ArgSchemaOnly = "schema-only"
 	// ArgSizeSlug is a size slug argument.
 	ArgSizeSlug = "size"
+	// ArgSizeUnit is a size unit argument.
+	ArgSizeUnit = "size-unit"
 	// ArgsSSHKeyPath is a ssh argument.
 	ArgsSSHKeyPath = "ssh-key-path"
 	// ArgSSHKeys is a ssh key argument.
@@ -158,6 +188,8 @@ const (
 	ArgsSSHPrivateIP = "ssh-private-ip"
 	// ArgSSHCommand is a ssh argument.
 	ArgSSHCommand = "ssh-command"
+	// ArgSSHRetryMax is a ssh argument.
+	ArgSSHRetryMax = "ssh-retry-max"
 	// ArgUserData is a user data argument.
 	ArgUserData = "user-data"
 	// ArgUserDataFile is a user data file location argument.
@@ -180,7 +212,7 @@ const (
 	ArgKeyPublicKeyFile = "public-key-file"
 	// ArgSSHUser is a SSH user argument.
 	ArgSSHUser = "ssh-user"
-	// ArgFormat is columns to include in output argment.
+	// ArgFormat is columns to include in output argument.
 	ArgFormat = "format"
 	// ArgNoHeader hides the output header.
 	ArgNoHeader = "no-header"
@@ -198,6 +230,10 @@ const (
 	ArgTag = "tag"
 	//ArgTemplate is template format
 	ArgTemplate = "template"
+	// ArgTimeout is a timeout duration
+	ArgTimeout = "timeout"
+	// ArgTriggerDeployment indicates whether to trigger a deployment
+	ArgTriggerDeployment = "trigger-deployment"
 	// ArgVersion is the version of the command to use
 	ArgVersion = "version"
 	// ArgVerbose enables verbose output
@@ -205,6 +241,34 @@ const (
 
 	// ArgOutput is an output type argument.
 	ArgOutput = "output"
+
+	// ArgUptimeCheckName is the name of an uptime check.
+	ArgUptimeCheckName = "name"
+	// ArgUptimeCheckType is the type of an uptime check.
+	ArgUptimeCheckType = "type"
+	// ArgUptimeCheckTarget is the target of an uptime check.
+	ArgUptimeCheckTarget = "target"
+	// ArgUptimeCheckRegions are the regions of an uptime check.
+	ArgUptimeCheckRegions = "regions"
+	// ArgUptimeCheckEnabled is whether or not an uptime check is enabled.
+	ArgUptimeCheckEnabled = "enabled"
+
+	// ArgUptimeAlertName is the name of an uptime alert.
+	ArgUptimeAlertName = "name"
+	// ArgUptimeAlertType is the type of an uptime alert.
+	ArgUptimeAlertType = "type"
+	// ArgUptimeAlertThreshold the threshold at which an uptime alert will trigger.
+	ArgUptimeAlertThreshold = "threshold"
+	// ArgUptimeAlertComparison is the uptime alert comparator.
+	ArgUptimeAlertComparison = "comparison"
+	// ArgUptimeAlertEmails are the emails to send uptime alerts to.
+	ArgUptimeAlertEmails = "emails"
+	// ArgUptimeAlertSlackChannels are the Slack channels to send uptime alerts to.
+	ArgUptimeAlertSlackChannels = "slack-channels"
+	// ArgUptimeAlertSlackURLs are the Slack URLs to send uptime alerts to.
+	ArgUptimeAlertSlackURLs = "slack-urls"
+	// ArgUptimeAlertPeriod is the time threshold at which an uptime alert will trigger.
+	ArgUptimeAlertPeriod = "period"
 
 	// ArgVolumeSize is the size of a volume.
 	ArgVolumeSize = "size"
@@ -255,6 +319,8 @@ const (
 	ArgRedirectHTTPToHTTPS = "redirect-http-to-https"
 	// ArgEnableProxyProtocol is a flag that indicates whether PROXY protocol should be enabled on the load balancer.
 	ArgEnableProxyProtocol = "enable-proxy-protocol"
+	// ArgDisableLetsEncryptDNSRecords is a flag that when set will disable the creation of DNS records pointing to the load balancer IP from the apex domain in the cert.
+	ArgDisableLetsEncryptDNSRecords = "disable-lets-encrypt-dns-records"
 	// ArgEnableBackendKeepalive is a flag that indicates whether keepalive connections should be enabled to target droplets from the load balancer.
 	ArgEnableBackendKeepalive = "enable-backend-keepalive"
 	// ArgStickySessions is a list of sticky sessions settings for the load balancer.
@@ -263,6 +329,24 @@ const (
 	ArgHealthCheck = "health-check"
 	// ArgForwardingRules is a list of forwarding rules for the load balancer.
 	ArgForwardingRules = "forwarding-rules"
+	// ArgHTTPIdleTimeoutSeconds is the http idle time out configuration for the load balancer
+	ArgHTTPIdleTimeoutSeconds = "http-idle-timeout-seconds"
+	// ArgAllowList is the list of firewall rules for ALLOWING traffic to the loadbalancer
+	ArgAllowList = "allow-list"
+	// ArgDenyList is a list of firewall rules for DENYING traffic to the loadbalancer
+	ArgDenyList = "deny-list"
+	// ArgLoadBalancerType is the type of the load balancer.
+	ArgLoadBalancerType = "type"
+	// ArgLoadBalancerDomains is list of domains supported for global load balancer.
+	ArgLoadBalancerDomains = "domains"
+	// ArgGlobalLoadBalancerSettings is global load balancer settings.
+	ArgGlobalLoadBalancerSettings = "glb-settings"
+	// ArgGlobalLoadBalancerCDNSettings is global load balancer CDN settings.
+	ArgGlobalLoadBalancerCDNSettings = "glb-cdn-settings"
+	// ArgTargetLoadBalancerIDs is a list of target load balancer IDs.
+	ArgTargetLoadBalancerIDs = "target-lb-ids"
+	// ArgLoadBalancerNetwork is the type of network the load balancer is accessible from.
+	ArgLoadBalancerNetwork = "network"
 
 	// ArgFirewallName is a name of the firewall.
 	ArgFirewallName = "name"
@@ -271,6 +355,8 @@ const (
 	// ArgOutboundRules is a list of outbound rules for the firewall.
 	ArgOutboundRules = "outbound-rules"
 
+	// ArgProjectID is the ID of a project.
+	ArgProjectID = "project-id"
 	// ArgProjectName is the name of a project.
 	ArgProjectName = "name"
 	// ArgProjectDescription is the description of a project.
@@ -284,10 +370,20 @@ const (
 	// ArgProjectResource is a flag for your resource URNs
 	ArgProjectResource = "resource"
 
+	// ArgDatabaseRestoreFromClusterName is a flag for specifying the name of an existing database cluster from which the backup will be restored.
+	ArgDatabaseRestoreFromClusterName = "restore-from-cluster-name"
+	// ArgDatabaseRestoreFromClusterID is a flag for specifying the id of an existing database cluster from which the new database will be forked from.
+	ArgDatabaseRestoreFromClusterID = "restore-from-cluster-id"
+	// ArgDatabaseRestoreFromTimestamp is a flag for specifying the timestamp of an existing database cluster backup in ISO8601 combined date and time format. The most recent backup will be used if excluded.
+	ArgDatabaseRestoreFromTimestamp = "restore-from-timestamp"
 	// ArgDatabaseEngine is a flag for specifying which database engine to use
 	ArgDatabaseEngine = "engine"
+	// ArgDatabaseConfigJson is a flag for specifying the database configuration in JSON format for an update
+	ArgDatabaseConfigJson = "config-json"
 	// ArgDatabaseNumNodes is the number of nodes in the database cluster
 	ArgDatabaseNumNodes = "num-nodes"
+	// ArgDatabaseStorageSizeMib is the amount of disk space, in MiB, that should be allocated to the database cluster
+	ArgDatabaseStorageSizeMib = "storage-size-mib"
 	// ArgDatabaseMaintenanceDay is the new day for the maintenance window
 	ArgDatabaseMaintenanceDay = "day"
 	// ArgDatabaseMaintenanceHour is the new hour for the maintenance window
@@ -302,6 +398,57 @@ const (
 	ArgDatabasePoolMode = "mode"
 	// ArgDatabaseUserMySQLAuthPlugin is a flag for setting the MySQL user auth plugin
 	ArgDatabaseUserMySQLAuthPlugin = "mysql-auth-plugin"
+	// ArgDatabasePrivateConnectionBool determine if the private connection details should be shown
+	ArgDatabasePrivateConnectionBool = "private"
+	// ArgDatabaseUserKafkaACLs will specify permissions on topics in kafka clsuter
+	ArgDatabaseUserKafkaACLs = "acl"
+
+	// ArgDatabaseTopicReplicationFactor is the replication factor of a kafka topic
+	ArgDatabaseTopicReplicationFactor = "replication-factor"
+	// ArgDatabaseTopicPartitionCount is the number of partitions that are associated with a kafka topic
+	ArgDatabaseTopicPartitionCount = "partition-count"
+	// ArgDatabaseTopicCleanupPolicy is the cleanup policy associated with a kafka topic
+	ArgDatabaseTopicCleanupPolicy = "cleanup-policy"
+	// ArgDatabaseTopicCompressionType is the compression algorithm used for a kafka topic
+	ArgDatabaseTopicCompressionType = "compression-type"
+	// ArgDatabaseTopicDeleteRetentionMS is the amount of time, in ms, to retain delete tombstone markers for a kafka topic
+	ArgDatabaseTopicDeleteRetentionMS = "delete-retention-ms"
+	// ArgDatabaseTopicFileDeleteDelayMS is the amount of time, in ms, to wait before deleting a file from the filesystem
+	ArgDatabaseTopicFileDeleteDelayMS = "file-delete-delay-ms"
+	// ArgDatabaseTopicFlushMessages is the size, in bytes, of all messages to accumulate on a partition before flushing them to disk
+	ArgDatabaseTopicFlushMessages = "flush-messages"
+	// ArgDatabaseTopicFlushMS is the amount of time, in ms, a message is kept in memory before it is flushed to disk
+	ArgDatabaseTopicFlushMS = "flush-ms"
+	// ArgDatabaseTopicIntervalIndexBytes is the number of bytes between entries being added into the offset index
+	ArgDatabaseTopicIntervalIndexBytes = "interval-index-bytes"
+	// ArgDatabaseTopicMaxCompactionLagMS is the maximum amount of time, in ms, that a message will remain uncompacted (if compaction is enabled)
+	ArgDatabaseTopicMaxCompactionLagMS = "max-compaction-lag-ms"
+	// ArgDatabaseTopicMaxMessageBytes is the maximum size, in bytes, of the largest record batch that can be sent to the server
+	ArgDatabaseTopicMaxMessageBytes = "max-message-bytes"
+	// ArgDatabaseTopicMesssageDownConversionEnable determines whether brokers should convert messages for consumers expecting older message formats
+	ArgDatabaseTopicMesssageDownConversionEnable = "message-down-conversion-enable"
+	// ArgDatabaseTopicMessageFormatVersion is the version used by the broker to append messages to the kafka topic logs
+	ArgDatabaseTopicMessageFormatVersion = "message-format-version"
+	// ArgDatabaseTopicMessageTimestampType is the timestamp used for messages
+	ArgDatabaseTopicMessageTimestampType = "message-timestamp-type"
+	// ArgDatabaseTopicMinCleanableDirtyRatio is ratio, between 0 and 1, specifying the frequenty of log compaction
+	ArgDatabaseTopicMinCleanableDirtyRatio = "min-cleanable-dirty-ratio"
+	// ArgDatabaseTopicMinCompactionLagMS is the minimum time, in ms, that a message will remain uncompacted
+	ArgDatabaseTopicMinCompactionLagMS = "min-compaction-lag-ms"
+	// ArgDatabaseTopicMinInsyncReplicas is the minimum number of replicas that must ACK a write for the write to be considered successful
+	ArgDatabaseTopicMinInsyncReplicas = "min-insync-replicas"
+	// ArgDatabaseTopicPreallocate determines whether a file should be preallocated on disk when creating a new log segment
+	ArgDatabaseTopicPreallocate = "preallocate"
+	// ArgDatabaseTopicRetentionBytes is the maximum size, in bytes, of a topic log before messages are deleted
+	ArgDatabaseTopicRetentionBytes = "retention-bytes"
+	// ArgDatabaseTopicRetentionMS is the maximum time, in ms, that a message is retained before deleting it
+	ArgDatabaseTopicRetentionMS = "retention-ms"
+	// ArgDatabaseTopicSegmentBytes is the maximum size, in bytes, of a single log file
+	ArgDatabaseTopicSegmentBytes = "segment-bytes"
+	// ArgDatabaseTopicSegmentJitterMS is the maximum random jitter, in ms, subtracted from the scheduled segment roll time to avoid thundering herds of segment rolling
+	ArgDatabaseTopicSegmentJitterMS = "segment-jitter-ms"
+	// ArgDatabaseTopicSegmentMS is the period of time, in ms, after which the log will be forced to roll if the segment file isn't full
+	ArgDatabaseTopicSegmentMS = "segment-ms"
 
 	// ArgPrivateNetworkUUID is the flag for VPC UUID
 	ArgPrivateNetworkUUID = "private-network-uuid"
@@ -323,10 +470,23 @@ const (
 	// ArgVPCIPRange is a VPC range of IP addresses in CIDR notation.
 	ArgVPCIPRange = "ip-range"
 
+	// ArgVPCPeeringName is a name of the VPC Peering.
+	ArgVPCPeeringName = "name"
+	// ArgVPCPeeringVPCIDs is the vpc ids of the peering
+	ArgVPCPeeringVPCIDs = "vpc-ids"
+	// ArgVPCPeeringVPCID is id of the VPC.
+	ArgVPCPeeringVPCID = "vpc-id"
+
 	// ArgReadWrite indicates a generated token should be read/write.
 	ArgReadWrite = "read-write"
+	// ArgRegistry indicates the name of the registry.
+	ArgRegistry = "registry"
 	// ArgRegistryExpirySeconds indicates the length of time the token will be valid in seconds.
 	ArgRegistryExpirySeconds = "expiry-seconds"
+	// ArgRegistryReadOnly indicates that a generated registry API token should be read-only.
+	ArgRegistryReadOnly = "read-only"
+	// ArgRegistryNeverExpire indicates that a generated registry API token should never expire.
+	ArgRegistryNeverExpire = "never-expire"
 	// ArgSubscriptionTier is a subscription tier slug.
 	ArgSubscriptionTier = "subscription-tier"
 	// ArgGCIncludeUntaggedManifests indicates that a garbage collection should delete
@@ -335,6 +495,9 @@ const (
 	// ArgGCExcludeUnreferencedBlobs indicates that a garbage collection should
 	// not delete unreferenced blobs.
 	ArgGCExcludeUnreferencedBlobs = "exclude-unreferenced-blobs"
+	// ArgRegistryAuthorizationServerEndpoint is the endpoint of the OAuth authorization server
+	// used to revoke credentials on logout.
+	ArgRegistryAuthorizationServerEndpoint = "authorization-server-endpoint"
 
 	// 1-Click Args
 
@@ -352,4 +515,42 @@ const (
 
 	// ArgDatabaseFirewallRuleUUID is the UUID for the firewall rules.
 	ArgDatabaseFirewallRuleUUID = "uuid"
+
+	// Monitoring Args
+
+	// ArgAlertPolicyDescription is the flag to pass in the alert policy description.
+	ArgAlertPolicyDescription = "description"
+
+	// ArgAlertPolicyType is the alert policy type.
+	ArgAlertPolicyType = "type"
+
+	// ArgAlertPolicyValue is the alert policy value.
+	ArgAlertPolicyValue = "value"
+
+	// ArgAlertPolicyWindow is the alert policy window.
+	ArgAlertPolicyWindow = "window"
+
+	// ArgAlertPolicyTags is the alert policy tags.
+	ArgAlertPolicyTags = "tags"
+
+	// ArgAlertPolicyEntities is the alert policy entities.
+	ArgAlertPolicyEntities = "entities"
+
+	// ArgAlertPolicyEnabled is whether the alert policy is enabled.
+	ArgAlertPolicyEnabled = "enabled"
+
+	// ArgAlertPolicyCompare is the alert policy comparator.
+	ArgAlertPolicyCompare = "compare"
+
+	// ArgAlertPolicyEmails are the emails to send alerts to.
+	ArgAlertPolicyEmails = "emails"
+
+	// ArgAlertPolicySlackChannels are the Slack channels to send alerts to.
+	ArgAlertPolicySlackChannels = "slack-channels"
+
+	// ArgAlertPolicySlackURLs are the Slack URLs to send alerts to.
+	ArgAlertPolicySlackURLs = "slack-urls"
+
+	// ArgTokenValidationServer is the server used to validate an OAuth token
+	ArgTokenValidationServer = "token-validation-server"
 )

@@ -38,8 +38,8 @@ func (a Apps) ColMap() map[string]string {
 	}
 }
 
-func (a Apps) KV() []map[string]interface{} {
-	out := make([]map[string]interface{}, len(a))
+func (a Apps) KV() []map[string]any {
+	out := make([]map[string]any, len(a))
 
 	for i, app := range a {
 		var (
@@ -55,7 +55,7 @@ func (a Apps) KV() []map[string]interface{} {
 			inProgressDeploymentID = app.InProgressDeployment.ID
 		}
 
-		out[i] = map[string]interface{}{
+		out[i] = map[string]any{
 			"ID":                      app.ID,
 			"Spec.Name":               app.Spec.Name,
 			"DefaultIngress":          app.DefaultIngress,
@@ -83,6 +83,7 @@ func (d Deployments) Cols() []string {
 		"ID",
 		"Cause",
 		"Progress",
+		"Phase",
 		"Created",
 		"Updated",
 	}
@@ -93,24 +94,30 @@ func (d Deployments) ColMap() map[string]string {
 		"ID":       "ID",
 		"Cause":    "Cause",
 		"Progress": "Progress",
+		"Phase":    "Phase",
 		"Created":  "Created At",
 		"Updated":  "Updated At",
 	}
 }
 
-func (d Deployments) KV() []map[string]interface{} {
-	out := make([]map[string]interface{}, len(d))
+func (d Deployments) KV() []map[string]any {
+	out := make([]map[string]any, len(d))
 
 	for i, deployment := range d {
-		progress := fmt.Sprintf("%d/%d", deployment.Progress.SuccessSteps, deployment.Progress.TotalSteps)
-		if deployment.Progress.ErrorSteps > 0 {
-			progress = fmt.Sprintf("%s (errors: %d)", progress, deployment.Progress.ErrorSteps)
+		var progress string
+		if deployment.Progress != nil {
+			p := deployment.Progress
+			progress = fmt.Sprintf("%d/%d", p.SuccessSteps, p.TotalSteps)
+			if p.ErrorSteps > 0 {
+				progress = fmt.Sprintf("%s (errors: %d)", progress, p.ErrorSteps)
+			}
 		}
 
-		out[i] = map[string]interface{}{
+		out[i] = map[string]any{
 			"ID":       deployment.ID,
 			"Cause":    deployment.Cause,
 			"Progress": progress,
+			"Phase":    deployment.Phase,
 			"Created":  deployment.CreatedAt,
 			"Updated":  deployment.UpdatedAt,
 		}
@@ -152,11 +159,11 @@ func (r AppRegions) ColMap() map[string]string {
 	}
 }
 
-func (r AppRegions) KV() []map[string]interface{} {
-	out := make([]map[string]interface{}, len(r))
+func (r AppRegions) KV() []map[string]any {
+	out := make([]map[string]any, len(r))
 
 	for i, region := range r {
-		out[i] = map[string]interface{}{
+		out[i] = map[string]any{
 			"Slug":        region.Slug,
 			"Label":       region.Label,
 			"Continent":   region.Continent,
@@ -197,15 +204,15 @@ func (t AppTiers) ColMap() map[string]string {
 	}
 }
 
-func (t AppTiers) KV() []map[string]interface{} {
-	out := make([]map[string]interface{}, len(t))
+func (t AppTiers) KV() []map[string]any {
+	out := make([]map[string]any, len(t))
 
 	for i, tier := range t {
 		egressBandwidth, _ := strconv.ParseUint(tier.EgressBandwidthBytes, 10, 64)
-		out[i] = map[string]interface{}{
+		out[i] = map[string]any{
 			"Name":                 tier.Name,
 			"Slug":                 tier.Slug,
-			"EgressBandwidthBytes": BytesToHumanReadibleUnitBinary(egressBandwidth),
+			"EgressBandwidthBytes": BytesToHumanReadableUnitBinary(egressBandwidth),
 			"BuildSeconds":         tier.BuildSeconds,
 		}
 	}
@@ -248,8 +255,8 @@ func (is AppInstanceSizes) ColMap() map[string]string {
 	}
 }
 
-func (is AppInstanceSizes) KV() []map[string]interface{} {
-	out := make([]map[string]interface{}, len(is))
+func (is AppInstanceSizes) KV() []map[string]any {
+	out := make([]map[string]any, len(is))
 
 	for i, instanceSize := range is {
 		memory, _ := strconv.ParseUint(instanceSize.MemoryBytes, 10, 64)
@@ -265,11 +272,11 @@ func (is AppInstanceSizes) KV() []map[string]interface{} {
 			upgradeDowngradePath = upgradeDowngradePath + " -> " + instanceSize.TierUpgradeTo
 		}
 
-		out[i] = map[string]interface{}{
+		out[i] = map[string]any{
 			"Name":                     instanceSize.Name,
 			"Slug":                     instanceSize.Slug,
 			"CPUs":                     cpus,
-			"Memory":                   BytesToHumanReadibleUnitBinary(memory),
+			"Memory":                   BytesToHumanReadableUnitBinary(memory),
 			"USDPerMonth":              instanceSize.USDPerMonth,
 			"USDPerSecond":             fmt.Sprintf("%.7f", usdPerSecond),
 			"TierSlug":                 instanceSize.TierSlug,
@@ -323,7 +330,7 @@ func (r AppProposeResponse) ColMap() map[string]string {
 	}
 }
 
-func (r AppProposeResponse) KV() []map[string]interface{} {
+func (r AppProposeResponse) KV() []map[string]any {
 	existingStatic, _ := strconv.ParseInt(r.Res.ExistingStaticApps, 10, 64)
 	maxFreeStatic, _ := strconv.ParseInt(r.Res.MaxFreeStaticApps, 10, 64)
 	var paidStatic int64
@@ -348,7 +355,7 @@ func (r AppProposeResponse) KV() []map[string]interface{} {
 		upgradeCost = fmt.Sprintf("%0.2f", r.Res.AppTierUpgradeCost)
 	}
 
-	out := map[string]interface{}{
+	out := map[string]any{
 		"AppNameAvailable":     boolToYesNo(r.Res.AppNameAvailable),
 		"AppIsStatic":          boolToYesNo(r.Res.AppIsStatic),
 		"StaticApps":           staticApps,
@@ -361,11 +368,137 @@ func (r AppProposeResponse) KV() []map[string]interface{} {
 		out["AppNameSuggestion"] = r.Res.AppNameSuggestion
 	}
 
-	return []map[string]interface{}{out}
+	return []map[string]any{out}
 }
 
 func (r AppProposeResponse) JSON(w io.Writer) error {
 	e := json.NewEncoder(w)
 	e.SetIndent("", "  ")
 	return e.Encode(r.Res)
+}
+
+type AppAlerts []*godo.AppAlert
+
+var _ Displayable = (*AppAlerts)(nil)
+
+func (a AppAlerts) Cols() []string {
+	return []string{
+		"ID",
+		"Spec.Rule",
+		"Trigger",
+		"ComponentName",
+		"Emails",
+		"SlackWebhooks",
+		"Spec.Disabled",
+	}
+}
+
+func (a AppAlerts) ColMap() map[string]string {
+	return map[string]string{
+		"ID":            "ID",
+		"Spec.Rule":     "Alert Rule",
+		"Trigger":       "Alert Trigger",
+		"ComponentName": "Component Name",
+		"Emails":        "Number Of Emails",
+		"SlackWebhooks": "Number Of Slack Webhooks",
+		"Spec.Disabled": "Alert Disabled?",
+	}
+}
+
+func (a AppAlerts) KV() []map[string]any {
+	out := make([]map[string]any, len(a))
+
+	for i, alert := range a {
+		var trigger string
+		switch alert.Spec.Rule {
+		case godo.AppAlertSpecRule_UnspecifiedRule:
+			trigger = "Unknown"
+		case godo.AppAlertSpecRule_CPUUtilization, godo.AppAlertSpecRule_MemUtilization, godo.AppAlertSpecRule_RestartCount:
+			var operator, window string
+			switch alert.Spec.Operator {
+			case godo.AppAlertSpecOperator_GreaterThan:
+				operator = ">"
+			case godo.AppAlertSpecOperator_LessThan:
+				operator = "<"
+			default:
+				operator = "Unknown"
+			}
+			switch alert.Spec.Window {
+			case godo.AppAlertSpecWindow_FiveMinutes:
+				window = "5m"
+			case godo.AppAlertSpecWindow_TenMinutes:
+				window = "10m"
+			case godo.AppAlertSpecWindow_ThirtyMinutes:
+				window = "30M"
+			case godo.AppAlertSpecWindow_OneHour:
+				window = "1h"
+			default:
+				window = "Unknown"
+			}
+			trigger = fmt.Sprintf("%s %.2f for %s", operator, alert.Spec.Value, window)
+		case godo.AppAlertSpecRule_DeploymentFailed, godo.AppAlertSpecRule_DeploymentLive, godo.AppAlertSpecRule_DomainFailed, godo.AppAlertSpecRule_DomainLive:
+			trigger = "Event"
+		default:
+			trigger = "Unknown"
+		}
+
+		out[i] = map[string]any{
+			"ID":            alert.ID,
+			"Spec.Rule":     alert.Spec.Rule,
+			"Trigger":       trigger,
+			"ComponentName": alert.ComponentName,
+			"Emails":        len(alert.Emails),
+			"SlackWebhooks": len(alert.SlackWebhooks),
+			"Spec.Disabled": alert.Spec.Disabled,
+		}
+	}
+	return out
+}
+
+func (a AppAlerts) JSON(w io.Writer) error {
+	e := json.NewEncoder(w)
+	e.SetIndent("", "  ")
+	return e.Encode(a)
+}
+
+type Buildpacks []*godo.Buildpack
+
+var _ Displayable = (*Buildpacks)(nil)
+
+func (b Buildpacks) Cols() []string {
+	return []string{
+		"Name",
+		"ID",
+		"Version",
+		"Documentation",
+	}
+}
+
+func (b Buildpacks) ColMap() map[string]string {
+	return map[string]string{
+		"Name":          "Name",
+		"ID":            "ID",
+		"Version":       "Version",
+		"Documentation": "Documentation",
+	}
+}
+
+func (b Buildpacks) KV() []map[string]any {
+	out := make([]map[string]any, len(b))
+
+	for i, bp := range b {
+		out[i] = map[string]any{
+			"Name":          bp.Name,
+			"ID":            bp.ID,
+			"Version":       bp.Version,
+			"Documentation": bp.DocsLink,
+		}
+	}
+	return out
+}
+
+func (b Buildpacks) JSON(w io.Writer) error {
+	e := json.NewEncoder(w)
+	e.SetIndent("", "  ")
+	return e.Encode(b)
 }

@@ -25,17 +25,19 @@ Usage:
 Available Commands:
   1-click         Display commands that pertain to 1-click applications
   account         Display commands that retrieve account details
+  apps            Display commands for working with apps
   auth            Display commands for authenticating doctl with an account
   balance         Display commands for retrieving your account balance
   billing-history Display commands for retrieving your billing history
   completion      Modify your shell so doctl commands autocomplete with TAB
   compute         Display commands that manage infrastructure
   databases       Display commands that manage databases
-  help            Help with any command
+  help            Help about any command
   invoice         Display commands for retrieving invoices for your account
   kubernetes      Displays commands to manage Kubernetes clusters and configurations
+  monitoring      [Beta] Display commands to manage monitoring
   projects        Manage projects and assign resources to them
-  registry        [EA] Display commands for working with container registries
+  registry        Display commands for working with container registries
   version         Show the current version
   vpcs            Display commands that manage VPCs
 
@@ -62,6 +64,7 @@ See the [full reference documentation](https://www.digitalocean.com/docs/apis-cl
       - [Using `doctl compute ssh`](#using-doctl-compute-ssh)
       - [Use with Docker](#use-with-docker)
     - [Arch Linux](#arch-linux)
+    - [Fedora](#fedora)
     - [Nix supported OS](#nix-supported-os)
   - [Docker Hub](#docker-hub)
   - [Downloading a Release from GitHub](#downloading-a-release-from-github)
@@ -136,7 +139,11 @@ This allows `doctl` to add DigitalOcean container registry credentials to your D
 
     sudo pacman -S doctl
 
-As an alternative, you can install it from the [AUR](https://aur.archlinux.org/packages/doctl-bin/).
+#### Fedora
+
+`doctl` is available in the official Fedora repository:
+
+    sudo dnf install doctl
 
 #### Nix supported OS
 
@@ -223,7 +230,7 @@ configured, you can install the development version of `doctl` from
 the command line.
 
 ```
-go get github.com/digitalocean/doctl/cmd/doctl
+go install github.com/digitalocean/doctl/cmd/doctl@latest
 ```
 
 While the development version is a good way to take a peek at
@@ -329,13 +336,19 @@ The most common way to use the `completion` command is by adding a line to your 
 source <(doctl completion your_shell_here)
 ```
 
+If you are using ZSH, add this line to your `~/.zshrc` file:
+
+```
+compdef _doctl doctl
+```
+
 Then refresh your profile.
 
 ```
 source ~/.profile
 ```
 
-### MacOS
+### MacOS (bash)
 
 macOS users will have to install the `bash-completion` framework to use the auto-completion feature.
 
@@ -343,7 +356,7 @@ macOS users will have to install the `bash-completion` framework to use the auto
 brew install bash-completion
 ```
 
-After it's installed, load `bash_completion` by adding the following line to your `.profile` or `.bashrc`/`.zshrc` file.
+After it's installed, load `bash_completion` by adding the following line to your `.profile` or `.bashrc` file.
 
 ```
 source $(brew --prefix)/etc/bash_completion
@@ -354,9 +367,17 @@ Then refresh your profile using the appropriate command for the bash configurati
 ```
 source ~/.profile
 source ~/.bashrc
-source ~/.zshrc
 ```
 
+### MacOS (zsh)
+
+Add the following line to your `~/.zshrc` file:
+
+```zsh
+autoload -U +X compinit; compinit
+```
+
+Then refresh your profile.
 
 ## Uninstalling `doctl`
 

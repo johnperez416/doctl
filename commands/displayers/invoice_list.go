@@ -43,16 +43,17 @@ func (i *InvoiceList) ColMap() map[string]string {
 	}
 }
 
-func (i *InvoiceList) KV() []map[string]interface{} {
-	out := []map[string]interface{}{}
-	x := map[string]interface{}{
+func (i *InvoiceList) KV() []map[string]any {
+	invoices := i.InvoiceList.Invoices
+	out := make([]map[string]any, 0, len(invoices)+1)
+	x := map[string]any{
 		"InvoiceUUID":   "preview",
 		"Amount":        i.InvoicePreview.Amount,
 		"InvoicePeriod": i.InvoicePreview.InvoicePeriod,
 	}
 	out = append(out, x)
-	for _, ii := range i.InvoiceList.Invoices {
-		x := map[string]interface{}{
+	for _, ii := range invoices {
+		x := map[string]any{
 			"InvoiceUUID":   ii.InvoiceUUID,
 			"Amount":        ii.Amount,
 			"InvoicePeriod": ii.InvoicePeriod,

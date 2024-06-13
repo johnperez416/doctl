@@ -21,15 +21,23 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 
 	"github.com/digitalocean/doctl"
-
-	"golang.org/x/crypto/ssh/terminal"
+	"github.com/digitalocean/doctl/commands/charm/input"
+	"github.com/digitalocean/doctl/commands/charm/template"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"golang.org/x/term"
 	yaml "gopkg.in/yaml.v2"
+)
+
+const (
+	// TokenValidationServer is the default server used to validate an OAuth token
+	TokenValidationServer = "https://cloud.digitalocean.com"
+
+	legacyTokenLength = 64
+	v1TokenLength     = 71
 )
 
 // ErrUnknownTerminal signifies an unknown terminal. It is returned when doit
@@ -42,18 +50,30 @@ var (
 // retrieveUserTokenFromCommandLine is a function that can retrieve a token. By default,
 // it will prompt the user. In test, you can replace this with code that returns the appropriate response.
 func retrieveUserTokenFromCommandLine() (string, error) {
-	if !terminal.IsTerminal(int(os.Stdout.Fd())) {
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		return "", ErrUnknownTerminal
 	}
 
-	fmt.Print("Please authenticate doctl for use with your DigitalOcean account. You can generate a token in the control panel at https://cloud.digitalocean.com/account/api/tokens\n\n")
-	fmt.Print("Enter your access token: ")
-	passwdBytes, err := terminal.ReadPassword(int(syscall.Stdin))
-	if err != nil {
-		return "", err
-	}
+	template.Print(
+		`Please authenticate doctl for use with your DigitalOcean account. You can generate a token in the control panel at {{underline "https://cloud.digitalocean.com/account/api/tokens"}}{{nl}}{{nl}}`,
+		nil,
+	)
 
-	return string(passwdBytes), nil
+	prompt := input.New("Enter your access token: ",
+		input.WithHidden(),
+		input.WithRequired(),
+		input.WithValidator(tokenInputValidator),
+	)
+
+	return prompt.Prompt()
+}
+
+// tokenInputValidator is used to do basic validation of a token while it is being typed.
+func tokenInputValidator(input string) error {
+	if len(input) == legacyTokenLength || (strings.HasPrefix(input, "do") && len(input) == v1TokenLength) {
+		return nil
+	}
+	return errors.New("")
 }
 
 // UnknownSchemeError signifies an unknown HTTP scheme.
@@ -75,42 +95,53 @@ func Auth() *Command {
 			Short: "Display commands for authenticating doctl with an account",
 			Long: `The ` + "`" + `doctl auth` + "`" + ` commands allow you to authenticate doctl for use with your DigitalOcean account using tokens that you generate in the control panel at https://cloud.digitalocean.com/account/api/tokens.
 
-If you work with a just one account, you can call ` + "`" + `doctl auth init` + "`" + ` and supply the token when prompted. This creates an authentication context named ` + "`" + `default` + "`" + `.
+If you work with a just one account, call ` + "`" + `doctl auth init` + "`" + ` and supply the token when prompted. This creates an authentication context named ` + "`" + `default` + "`" + `.
 
-To switch between multiple DigitalOcean accounts, including team accounts, you can create named contexts by using ` + "`" + `doctl auth init --context <name>` + "`" + `, then providing a token when prompted. This saves the token under the name you provide. To switch between accounts, use ` + "`" + `doctl auth switch --context <name>` + "`" + `.,
+To switch between multiple DigitalOcean accounts, including team accounts, create named contexts using ` + "`" + `doctl auth init --context <name>` + "`" + `, then providing the applicable token when prompted. This saves the token under the name you provide. To switch between contexts, use ` + "`" + `doctl auth switch --context <name>` + "`" + `.
 
-To remove accounts from the configuration file, you can run ` + "`" + `doctl auth remove --context <name>` + "`" + `. This removes the token under the name you provide.`,
+To remove accounts from the configuration file, run ` + "`" + `doctl auth remove --context <name>` + "`" + `. This removes the token under the name you provide.`,
+			GroupID: configureDoctlGroup,
 		},
 	}
 
-	cmdBuilderWithInit(cmd, RunAuthInit(retrieveUserTokenFromCommandLine), "init", "Initialize doctl to use a specific account", `This command allows you to initialize doctl with a token that allows it to query and manage your account details and resources.
+	cmdAuthInit := cmdBuilderWithInit(cmd, RunAuthInit(retrieveUserTokenFromCommandLine), "init", "Initialize doctl to use a specific account", `This command allows you to initialize doctl with a token that allows it to query and manage your account details and resources.
 
-You will need an API token, which you can generate in the control panel at https://cloud.digitalocean.com/account/api/tokens.
+The command requires and API token to authenticate, which you can generate in the control panel at https://cloud.digitalocean.com/account/api/tokens.
 
-You can provide a name to this initialization via the `+"`"+`--context`+"`"+` flag, and then it will be saved as an "authentication context". Authentication contexts are accessible via `+"`"+`doctl auth switch`+"`"+`, which re-initializes doctl, or by providing the `+"`"+`--context`+"`"+` flag when using any doctl command (to specify that auth context for just one command). This enables you to use multiple DigitalOcean accounts with doctl, or tokens that have different authentication scopes.
+The `+"`"+`--context`+"`"+` flag allows you to add authentication for multiple accounts and then switch between them as needed. Provide a case-sensitive name for the context and then enter the API token you want use for that context when prompted. You can switch authentication contexts using `+"`"+`doctl auth switch`+"`"+`, which re-initializes doctl. You can also provide the `+"`"+`--context`+"`"+` flag when using any doctl command to specify the auth context for that command. This enables you to use multiple DigitalOcean accounts with doctl, or tokens that have different authentication scopes.
 
-If the `+"`"+`--context`+"`"+` flag is not specified, a default authentication context will be created during initialization.
+If the `+"`"+`--context`+"`"+` flag is not specified, doctl creates a default authentication context named `+"`"+`default`+"`"+`.
 
-If doctl is never initialized, you will need to specify an API token whenever you use a `+"`"+`doctl`+"`"+` command via the `+"`"+`--access-token`+"`"+` flag.`, Writer, false)
-	cmdBuilderWithInit(cmd, RunAuthSwitch, "switch", "Switches between authentication contexts", `This command allows you to switch between accounts with authentication contexts you've already created.
+You can use doctl without initializing it by adding the `+"`"+`--access-token`+"`"+` flag to each command and providing an API token as the argument.`, Writer, false)
+	AddStringFlag(cmdAuthInit, doctl.ArgTokenValidationServer, "", TokenValidationServer, "The server used to validate a token")
+	cmdAuthInit.Example = `The following example initializes doctl with a token for a single account with the context ` + "`" + `your-team` + "`" + `: doctl auth init --context your-team`
 
-To see a list of available authentication contexts, call `+"`"+`doctl auth list`+"`"+`.
-
-For details on creating an authentication context, see the help for `+"`"+`doctl auth init`+"`"+`.`, Writer, false)
-	cmdBuilderWithInit(cmd, RunAuthRemove, "remove", "Remove authentication contexts ", `This command allows you to remove authentication contexts you've already created.
+	cmdAuthSwitch := cmdBuilderWithInit(cmd, RunAuthSwitch, "switch", "Switch between authentication contexts", `This command allows you to switch between authentication contexts you've already created.
 
 To see a list of available authentication contexts, call `+"`"+`doctl auth list`+"`"+`.
 
 For details on creating an authentication context, see the help for `+"`"+`doctl auth init`+"`"+`.`, Writer, false)
+	cmdAuthSwitch.AddValidArgsFunc(authContextListValidArgsFunc)
+	cmdAuthSwitch.Example = `The following example switches to the context ` + "`" + `your-team` + "`" + `: doctl auth switch --context your-team`
+
+	cmdAuthRemove := cmdBuilderWithInit(cmd, RunAuthRemove, "remove --context <name>", "Remove authentication contexts ", `This command allows you to remove authentication contexts you've already created.
+
+To see a list of available authentication contexts, call `+"`"+`doctl auth list`+"`"+`.
+
+For details on creating an authentication context, see the help for `+"`"+`doctl auth init`+"`"+`.`, Writer, false)
+	cmdAuthRemove.AddValidArgsFunc(authContextListValidArgsFunc)
+	cmdAuthRemove.Example = `The following example removes the context ` + "`" + `your-team` + "`" + `: doctl auth remove --context your-team`
+
 	cmdAuthList := cmdBuilderWithInit(cmd, RunAuthList, "list", "List available authentication contexts", `List named authentication contexts that you created with `+"`"+`doctl auth init`+"`"+`.
 
-To switch between the contexts use `+"`"+`doctl switch <name>`+"`"+`, where `+"`"+`<name>`+"`"+` is one of the contexts listed.
+To switch between the contexts use `+"`"+`doctl auth switch --context <name>`+"`"+`, where `+"`"+`<name>`+"`"+` is one of the contexts listed.
 
 To create new contexts, see the help for `+"`"+`doctl auth init`+"`"+`.`, Writer, false, aliasOpt("ls"))
 	// The command runner expects that any command named "list" accepts a
 	// format flag, so we include here despite only supporting text output for
 	// this command.
 	AddStringFlag(cmdAuthList, doctl.ArgFormat, "", "", "Columns for output in a comma-separated list. Possible values: `text`")
+	cmdAuthList.Example = `The following example lists the available contexts with the ` + "`" + `--format` + "`" + ` flag: doctl auth list`
 
 	return cmd
 }
@@ -120,6 +151,10 @@ To create new contexts, see the help for `+"`"+`doctl auth init`+"`"+`.`, Writer
 func RunAuthInit(retrieveUserTokenFunc func() (string, error)) func(c *CmdConfig) error {
 	return func(c *CmdConfig) error {
 		token := c.getContextAccessToken()
+		context := strings.ToLower(Context)
+		if context == "" {
+			context = strings.ToLower(viper.GetString("context"))
+		}
 
 		if token == "" {
 			in, err := retrieveUserTokenFunc()
@@ -128,28 +163,29 @@ func RunAuthInit(retrieveUserTokenFunc func() (string, error)) func(c *CmdConfig
 			}
 			token = strings.TrimSpace(in)
 		} else {
-			fmt.Fprintf(c.Out, "Using token [%v]", token)
-			fmt.Fprintln(c.Out)
+			template.Render(c.Out, `Using token for context {{highlight .}}{{nl}}`, context)
 		}
 
-		c.setContextAccessToken(string(token))
+		c.setContextAccessToken(token)
 
-		fmt.Fprintln(c.Out)
-		fmt.Fprint(c.Out, "Validating token... ")
+		template.Render(c.Out, `{{nl}}Validating token... `, nil)
 
 		// need to initial the godo client since we've changed the configuration.
 		if err := c.initServices(c); err != nil {
 			return fmt.Errorf("Unable to initialize DigitalOcean API client with new token: %s", err)
 		}
 
-		if _, err := c.Account().Get(); err != nil {
-			fmt.Fprintln(c.Out, "invalid token")
-			fmt.Fprintln(c.Out)
+		server, err := c.Doit.GetString(c.NS, doctl.ArgTokenValidationServer)
+		if err != nil {
+			return err
+		}
+
+		if _, err := c.OAuth().TokenInfo(server); err != nil {
+			template.Render(c.Out, `{{error crossmark}}{{nl}}{{nl}}`, nil)
 			return fmt.Errorf("Unable to use supplied token to access API: %s", err)
 		}
 
-		fmt.Fprintln(c.Out, "OK")
-		fmt.Fprintln(c.Out)
+		template.Render(c.Out, `{{success checkmark}}{{nl}}{{nl}}`, nil)
 
 		return writeConfig()
 	}
@@ -157,7 +193,7 @@ func RunAuthInit(retrieveUserTokenFunc func() (string, error)) func(c *CmdConfig
 
 // RunAuthRemove remove available auth contexts from the user's doctl config.
 func RunAuthRemove(c *CmdConfig) error {
-	context := Context
+	context := strings.ToLower(Context)
 
 	if context == "" {
 		return fmt.Errorf("You must provide a context name")
@@ -186,7 +222,7 @@ func RunAuthList(c *CmdConfig) error {
 	return nil
 }
 
-func displayAuthContexts(out io.Writer, currentContext string, contexts map[string]interface{}) {
+func displayAuthContexts(out io.Writer, currentContext string, contexts map[string]any) {
 	// Because the default context isn't present on the auth-contexts field,
 	// we add it manually so that it's always included in the output, and so
 	// we can check if it's the current context.
@@ -212,10 +248,36 @@ func displayAuthContexts(out io.Writer, currentContext string, contexts map[stri
 // RunAuthSwitch changes the default context and writes it to the
 // configuration.
 func RunAuthSwitch(c *CmdConfig) error {
-	context := Context
+	context := strings.ToLower(Context)
 	if context == "" {
-		context = viper.GetString("context")
+		context = strings.ToLower(viper.GetString("context"))
 	}
+
+	// check that context exists
+	contextsAvail := viper.GetStringMap("auth-contexts")
+	contextsAvail[doctl.ArgDefaultContext] = true
+	keys := make([]string, 0)
+	for ctx := range contextsAvail {
+		keys = append(keys, ctx)
+	}
+
+	var contextExists bool
+	for _, ctx := range keys {
+		if ctx == context {
+			contextExists = true
+		}
+	}
+
+	if !contextExists {
+		return errors.New("context does not exist")
+	}
+
+	// The two lines below aren't required for doctl specific functionality,
+	// but somehow magically fixes an issue
+	// (https://github.com/digitalocean/doctl/issues/996) where auth-contexts
+	// are mangled when running this command.
+	contexts := viper.GetStringMapString("auth-contexts")
+	viper.Set("auth-contexts", contexts)
 
 	viper.Set("context", context)
 
@@ -264,4 +326,22 @@ func defaultConfigFileWriter() (io.WriteCloser, error) {
 	}
 
 	return f, nil
+}
+
+func getAuthContextList() []string {
+	contexts := []string{"default"}
+	cfgContexts := viper.GetStringMap("auth-contexts")
+
+	for k := range cfgContexts {
+		contexts = append(contexts, k)
+	}
+
+	return contexts
+}
+
+func authContextListValidArgsFunc(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if len(args) != 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	return getAuthContextList(), cobra.ShellCompDirectiveNoFileComp
 }

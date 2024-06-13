@@ -15,6 +15,7 @@ package do
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"github.com/digitalocean/godo"
@@ -86,13 +87,59 @@ type DatabaseFirewallRule struct {
 // DatabaseFirewallRules is a slice of DatabaseFirewallRule
 type DatabaseFirewallRules []DatabaseFirewallRule
 
+// DatabaseOptions is a wrapper for
+type DatabaseOptions struct {
+	*godo.DatabaseOptions
+}
+
+// DatabaseLayout is a wrapper for
+type DatabaseLayout struct {
+	*godo.DatabaseLayout
+}
+
+// MySQLConfig is a wrapper for godo.MySQLConfig
+type MySQLConfig struct {
+	*godo.MySQLConfig
+}
+
+// PostgreSQLConfig is a wrapper for godo.PostgreSQLConfig
+type PostgreSQLConfig struct {
+	*godo.PostgreSQLConfig
+}
+
+// RedisConfig is a wrapper for godo.RedisConfig
+type RedisConfig struct {
+	*godo.RedisConfig
+}
+
+// DatabaseTopics is a slice of DatabaseTopic
+type DatabaseTopics []DatabaseTopic
+
+// DatabaseTopic is a wrapper for godo.DatabaseTopic
+type DatabaseTopic struct {
+	*godo.DatabaseTopic
+}
+
+// DatabaseTopicPartitions is a slice of *godo.TopicPartition
+type DatabaseTopicPartitions struct {
+	Partitions []*godo.TopicPartition
+}
+
+// DatabaseEvent is a wrapper for godo.DatabaseEvent
+type DatabaseEvent struct {
+	*godo.DatabaseEvent
+}
+
+// DatabaseEvents is a slice of DatabaseEvent
+type DatabaseEvents []DatabaseEvent
+
 // DatabasesService is an interface for interacting with DigitalOcean's Database API
 type DatabasesService interface {
 	List() (Databases, error)
 	Get(string) (*Database, error)
 	Create(*godo.DatabaseCreateRequest) (*Database, error)
 	Delete(string) error
-	GetConnection(string) (*DatabaseConnection, error)
+	GetConnection(string, bool) (*DatabaseConnection, error)
 	ListBackups(string) (DatabaseBackups, error)
 	Resize(string, *godo.DatabaseResizeRequest) error
 	Migrate(string, *godo.DatabaseMigrateRequest) error
@@ -120,6 +167,7 @@ type DatabasesService interface {
 	ListReplicas(string) (DatabaseReplicas, error)
 	CreateReplica(string, *godo.DatabaseCreateReplicaRequest) (*DatabaseReplica, error)
 	DeleteReplica(string, string) error
+	PromoteReplica(string, string) error
 	GetReplicaConnection(string, string) (*DatabaseConnection, error)
 
 	GetSQLMode(string) ([]string, error)
@@ -127,6 +175,24 @@ type DatabasesService interface {
 
 	GetFirewallRules(string) (DatabaseFirewallRules, error)
 	UpdateFirewallRules(databaseID string, req *godo.DatabaseUpdateFirewallRulesRequest) error
+
+	ListOptions() (*DatabaseOptions, error)
+
+	GetMySQLConfiguration(databaseID string) (*MySQLConfig, error)
+	GetPostgreSQLConfiguration(databaseID string) (*PostgreSQLConfig, error)
+	GetRedisConfiguration(databaseID string) (*RedisConfig, error)
+
+	UpdateMySQLConfiguration(databaseID string, confString string) error
+	UpdatePostgreSQLConfiguration(databaseID string, confString string) error
+	UpdateRedisConfiguration(databaseID string, confString string) error
+
+	ListTopics(string) (DatabaseTopics, error)
+	GetTopic(string, string) (*DatabaseTopic, error)
+	CreateTopic(string, *godo.DatabaseCreateTopicRequest) (*DatabaseTopic, error)
+	UpdateTopic(string, string, *godo.DatabaseUpdateTopicRequest) error
+	DeleteTopic(string, string) error
+
+	ListDatabaseEvents(string) (DatabaseEvents, error)
 }
 
 type databasesService struct {
@@ -143,13 +209,13 @@ func NewDatabasesService(client *godo.Client) DatabasesService {
 }
 
 func (ds *databasesService) List() (Databases, error) {
-	f := func(opt *godo.ListOptions) ([]interface{}, *godo.Response, error) {
+	f := func(opt *godo.ListOptions) ([]any, *godo.Response, error) {
 		list, resp, err := ds.client.Databases.List(context.TODO(), opt)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		si := make([]interface{}, len(list))
+		si := make([]any, len(list))
 		for i := range list {
 			si[i] = list[i]
 		}
@@ -194,10 +260,16 @@ func (ds *databasesService) Delete(databaseID string) error {
 	return err
 }
 
-func (ds *databasesService) GetConnection(databaseID string) (*DatabaseConnection, error) {
+func (ds *databasesService) GetConnection(databaseID string, private bool) (*DatabaseConnection, error) {
 	db, err := ds.Get(databaseID)
 	if err != nil {
 		return nil, err
+	}
+
+	if private {
+		return &DatabaseConnection{
+			DatabaseConnection: db.PrivateConnection,
+		}, nil
 	}
 
 	return &DatabaseConnection{
@@ -235,13 +307,13 @@ func (ds *databasesService) UpdateMaintenance(databaseID string, req *godo.Datab
 }
 
 func (ds *databasesService) ListBackups(databaseID string) (DatabaseBackups, error) {
-	f := func(opt *godo.ListOptions) ([]interface{}, *godo.Response, error) {
+	f := func(opt *godo.ListOptions) ([]any, *godo.Response, error) {
 		list, resp, err := ds.client.Databases.ListBackups(context.TODO(), databaseID, opt)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		si := make([]interface{}, len(list))
+		si := make([]any, len(list))
 		for i := range list {
 			si[i] = list[i]
 		}
@@ -272,13 +344,13 @@ func (ds *databasesService) GetUser(databaseID, userName string) (*DatabaseUser,
 }
 
 func (ds *databasesService) ListUsers(databaseID string) (DatabaseUsers, error) {
-	f := func(opt *godo.ListOptions) ([]interface{}, *godo.Response, error) {
+	f := func(opt *godo.ListOptions) ([]any, *godo.Response, error) {
 		list, resp, err := ds.client.Databases.ListUsers(context.TODO(), databaseID, opt)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		si := make([]interface{}, len(list))
+		si := make([]any, len(list))
 		for i := range list {
 			si[i] = list[i]
 		}
@@ -323,13 +395,13 @@ func (ds *databasesService) ResetUserAuth(databaseID, userID string, req *godo.D
 }
 
 func (ds *databasesService) ListDBs(databaseID string) (DatabaseDBs, error) {
-	f := func(opt *godo.ListOptions) ([]interface{}, *godo.Response, error) {
+	f := func(opt *godo.ListOptions) ([]any, *godo.Response, error) {
 		list, resp, err := ds.client.Databases.ListDBs(context.TODO(), databaseID, opt)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		si := make([]interface{}, len(list))
+		si := make([]any, len(list))
 		for i := range list {
 			si[i] = list[i]
 		}
@@ -375,13 +447,13 @@ func (ds *databasesService) DeleteDB(databaseID, dbID string) error {
 }
 
 func (ds *databasesService) ListPools(databaseID string) (DatabasePools, error) {
-	f := func(opt *godo.ListOptions) ([]interface{}, *godo.Response, error) {
+	f := func(opt *godo.ListOptions) ([]any, *godo.Response, error) {
 		list, resp, err := ds.client.Databases.ListPools(context.TODO(), databaseID, opt)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		si := make([]interface{}, len(list))
+		si := make([]any, len(list))
 		for i := range list {
 			si[i] = list[i]
 		}
@@ -436,13 +508,13 @@ func (ds *databasesService) GetReplica(databaseID, replicaID string) (*DatabaseR
 }
 
 func (ds *databasesService) ListReplicas(databaseID string) (DatabaseReplicas, error) {
-	f := func(opt *godo.ListOptions) ([]interface{}, *godo.Response, error) {
+	f := func(opt *godo.ListOptions) ([]any, *godo.Response, error) {
 		list, resp, err := ds.client.Databases.ListReplicas(context.TODO(), databaseID, opt)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		si := make([]interface{}, len(list))
+		si := make([]any, len(list))
 		for i := range list {
 			si[i] = list[i]
 		}
@@ -478,6 +550,12 @@ func (ds *databasesService) DeleteReplica(databaseID string, replicaID string) e
 	return err
 }
 
+func (ds *databasesService) PromoteReplica(databaseID string, replicaID string) error {
+	_, err := ds.client.Databases.PromoteReplicaToPrimary(context.TODO(), databaseID, replicaID)
+
+	return err
+}
+
 func (ds *databasesService) GetReplicaConnection(databaseID, replicaID string) (*DatabaseConnection, error) {
 	rep, err := ds.GetReplica(databaseID, replicaID)
 	if err != nil {
@@ -500,13 +578,13 @@ func (ds *databasesService) SetSQLMode(databaseID string, sqlModes ...string) er
 }
 
 func (ds *databasesService) GetFirewallRules(databaseID string) (DatabaseFirewallRules, error) {
-	f := func(opt *godo.ListOptions) ([]interface{}, *godo.Response, error) {
+	f := func(opt *godo.ListOptions) ([]any, *godo.Response, error) {
 		list, resp, err := ds.client.Databases.GetFirewallRules(context.TODO(), databaseID)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		si := make([]interface{}, len(list))
+		si := make([]any, len(list))
 		for i := range list {
 			si[i] = list[i]
 		}
@@ -531,4 +609,177 @@ func (ds *databasesService) UpdateFirewallRules(databaseID string, req *godo.Dat
 	_, err := ds.client.Databases.UpdateFirewallRules(context.TODO(), databaseID, req)
 
 	return err
+}
+
+func (ds *databasesService) ListOptions() (*DatabaseOptions, error) {
+	options, _, err := ds.client.Databases.ListOptions(context.TODO())
+
+	if err != nil {
+		return nil, err
+	}
+	return &DatabaseOptions{DatabaseOptions: options}, nil
+}
+
+func (ds *databasesService) GetMySQLConfiguration(databaseID string) (*MySQLConfig, error) {
+	cfg, _, err := ds.client.Databases.GetMySQLConfig(context.TODO(), databaseID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &MySQLConfig{
+		MySQLConfig: cfg,
+	}, nil
+}
+
+func (ds *databasesService) GetPostgreSQLConfiguration(databaseID string) (*PostgreSQLConfig, error) {
+	cfg, _, err := ds.client.Databases.GetPostgreSQLConfig(context.TODO(), databaseID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &PostgreSQLConfig{
+		PostgreSQLConfig: cfg,
+	}, nil
+}
+
+func (ds *databasesService) GetRedisConfiguration(databaseID string) (*RedisConfig, error) {
+	cfg, _, err := ds.client.Databases.GetRedisConfig(context.TODO(), databaseID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &RedisConfig{
+		RedisConfig: cfg,
+	}, nil
+}
+
+func (ds *databasesService) UpdateMySQLConfiguration(databaseID string, confString string) error {
+	var conf godo.MySQLConfig
+	err := json.Unmarshal([]byte(confString), &conf)
+	if err != nil {
+		return err
+	}
+
+	_, err = ds.client.Databases.UpdateMySQLConfig(context.TODO(), databaseID, &conf)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (ds *databasesService) UpdatePostgreSQLConfiguration(databaseID string, confString string) error {
+	var conf godo.PostgreSQLConfig
+	err := json.Unmarshal([]byte(confString), &conf)
+	if err != nil {
+		return err
+	}
+
+	_, err = ds.client.Databases.UpdatePostgreSQLConfig(context.TODO(), databaseID, &conf)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (ds *databasesService) UpdateRedisConfiguration(databaseID string, confString string) error {
+	var conf godo.RedisConfig
+	err := json.Unmarshal([]byte(confString), &conf)
+	if err != nil {
+		return err
+	}
+
+	_, err = ds.client.Databases.UpdateRedisConfig(context.TODO(), databaseID, &conf)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (ds *databasesService) ListTopics(databaseID string) (DatabaseTopics, error) {
+	f := func(opt *godo.ListOptions) ([]any, *godo.Response, error) {
+		list, resp, err := ds.client.Databases.ListTopics(context.TODO(), databaseID, opt)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		si := make([]any, len(list))
+		for i := range list {
+			si[i] = list[i]
+		}
+
+		return si, resp, err
+	}
+
+	si, err := PaginateResp(f)
+	if err != nil {
+		return nil, err
+	}
+
+	list := make(DatabaseTopics, len(si))
+	for i := range si {
+		t := si[i].(godo.DatabaseTopic)
+		list[i] = DatabaseTopic{DatabaseTopic: &t}
+	}
+	return list, nil
+}
+
+func (ds *databasesService) CreateTopic(databaseID string, req *godo.DatabaseCreateTopicRequest) (*DatabaseTopic, error) {
+	t, _, err := ds.client.Databases.CreateTopic(context.TODO(), databaseID, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return &DatabaseTopic{DatabaseTopic: t}, nil
+}
+
+func (ds *databasesService) UpdateTopic(databaseID, topicName string, req *godo.DatabaseUpdateTopicRequest) error {
+	_, err := ds.client.Databases.UpdateTopic(context.TODO(), databaseID, topicName, req)
+
+	return err
+}
+
+func (ds *databasesService) GetTopic(databaseID, topicName string) (*DatabaseTopic, error) {
+	t, _, err := ds.client.Databases.GetTopic(context.TODO(), databaseID, topicName)
+	if err != nil {
+		return nil, err
+	}
+
+	return &DatabaseTopic{DatabaseTopic: t}, nil
+}
+
+func (ds *databasesService) DeleteTopic(databaseID, topicName string) error {
+	_, err := ds.client.Databases.DeleteTopic(context.TODO(), databaseID, topicName)
+
+	return err
+}
+
+func (ds *databasesService) ListDatabaseEvents(databaseID string) (DatabaseEvents, error) {
+	f := func(opt *godo.ListOptions) ([]any, *godo.Response, error) {
+		list, resp, err := ds.client.Databases.ListDatabaseEvents(context.TODO(), databaseID, opt)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		si := make([]any, len(list))
+		for i := range list {
+			si[i] = list[i]
+		}
+
+		return si, resp, err
+	}
+
+	si, err := PaginateResp(f)
+	if err != nil {
+		return nil, err
+	}
+
+	list := make(DatabaseEvents, len(si))
+	for i := range si {
+		r := si[i].(godo.DatabaseEvent)
+		list[i] = DatabaseEvent{DatabaseEvent: &r}
+	}
+	return list, nil
 }

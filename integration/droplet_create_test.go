@@ -3,7 +3,7 @@ package integration
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -19,11 +19,16 @@ type dropletRequest struct {
 	Name string `json:"name"`
 }
 
+type assignResourcesRequest struct {
+	Resources []string `json:"resources"`
+}
+
 var _ = suite("compute/droplet/create", func(t *testing.T, when spec.G, it spec.S) {
 	var (
-		expect  *require.Assertions
-		server  *httptest.Server
-		reqBody []byte
+		expect                 *require.Assertions
+		server                 *httptest.Server
+		reqBody                []byte
+		assignResourcesReqBody []byte
 	)
 
 	it.Before(func() {
@@ -44,7 +49,7 @@ var _ = suite("compute/droplet/create", func(t *testing.T, when spec.G, it spec.
 				}
 
 				var err error
-				reqBody, err = ioutil.ReadAll(req.Body)
+				reqBody, err = io.ReadAll(req.Body)
 				expect.NoError(err)
 
 				var dr dropletRequest
@@ -64,6 +69,30 @@ var _ = suite("compute/droplet/create", func(t *testing.T, when spec.G, it spec.
 				// since we've successfully tested all the behavior
 				// at this point
 				w.Write([]byte(dropletCreateResponse))
+			case "/v2/projects/00000000-0000-4000-8000-000000000000/resources":
+				auth := req.Header.Get("Authorization")
+				if auth != "Bearer some-magic-token" {
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+
+				if req.Method != http.MethodPost {
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+
+				var err error
+				assignResourcesReqBody, err = io.ReadAll(req.Body)
+				expect.NoError(err)
+
+				var arr assignResourcesRequest
+				err = json.Unmarshal(assignResourcesReqBody, &arr)
+				expect.NoError(err)
+
+				expect.Greater(len(arr.Resources), 0)
+				expect.Equal(arr.Resources[0], "do:droplet:1111")
+
+				w.Write([]byte(assignResourcesResponse))
 			default:
 				dump, err := httputil.DumpRequest(req, true)
 				if err != nil {
@@ -133,6 +162,42 @@ var _ = suite("compute/droplet/create", func(t *testing.T, when spec.G, it spec.
 		})
 	})
 
+	when("a project id is passed", func() {
+		it("creates a droplet and moves it to that project", func() {
+			cmd := exec.Command(builtBinaryPath,
+				"-t", "some-magic-token",
+				"-u", server.URL,
+				"compute",
+				"droplet",
+				"create",
+				"some-droplet-name",
+				"--image", "a-test-image",
+				"--region", "a-test-region",
+				"--size", "a-test-size",
+				"--project-id", "00000000-0000-4000-8000-000000000000",
+			)
+
+			output, err := cmd.CombinedOutput()
+			expect.NoError(err, fmt.Sprintf("received error output: %s", output))
+			expect.Equal(strings.TrimSpace(dropletCreateOutput), strings.TrimSpace(string(output)))
+
+			request := &struct {
+				Name   string
+				Image  string
+				Region string
+				Size   string
+			}{}
+
+			err = json.Unmarshal(reqBody, request)
+			expect.NoError(err)
+
+			expect.Equal("some-droplet-name", request.Name)
+			expect.Equal("a-test-image", request.Image)
+			expect.Equal("a-test-region", request.Region)
+			expect.Equal("a-test-size", request.Size)
+		})
+	})
+
 	when("missing required arguments", func() {
 		base := []string{
 			"-t", "some-magic-token",
@@ -151,7 +216,6 @@ var _ = suite("compute/droplet/create", func(t *testing.T, when spec.G, it spec.
 		}{
 			{desc: "missing all", err: fmt.Sprintf(baseErr, ""), args: base},
 			{desc: "missing only name", err: fmt.Sprintf(baseErr, ""), args: append(base, []string{"--size", "test", "--region", "test", "--image", "test"}...)},
-			{desc: "missing only region", err: fmt.Sprintf(baseErr, ".region"), args: append(base, []string{"some-name", "--size", "test", "--image", "test"}...)},
 			{desc: "missing only size", err: fmt.Sprintf(baseErr, ".size"), args: append(base, []string{"some-name", "--image", "test", "--region", "test"}...)},
 			{desc: "missing only image", err: fmt.Sprintf(baseErr, ".image"), args: append(base, []string{"some-name", "--size", "test", "--region", "test"}...)},
 		}
@@ -209,6 +273,20 @@ const (
 	actionCompletedResponse = `
 {"action": "id": 1, "status": "completed"}
 `
+	assignResourcesResponse = `{
+  "resources": [
+    {
+      "urn": "do:droplet:1111",
+      "assigned_at": "2024-01-01T00:00:00Z",
+      "links": {
+        "self": "https://api.digitalocean.com/v2/droplets/1111"
+      },
+      "status": "ok"
+    }
+  ]
+}
+`
+
 	dropletCreateOutput = `
 ID      Name                 Public IPv4    Private IPv4    Public IPv6    Memory    VCPUs    Disk    Region              Image                          VPC UUID                                Status    Tags    Features    Volumes
 1111    some-droplet-name    1.2.3.4        7.7.7.7                        12        13       15      some-region-slug    some-distro some-image-name    00000000-0000-4000-8000-000000000000    active    yes     remotes     some-volume-id

@@ -23,7 +23,7 @@ import (
 // DropletIPTable is a table of interface IPS.
 type DropletIPTable map[InterfaceType]string
 
-// InterfaceType is a an interface type.
+// InterfaceType is an interface type.
 type InterfaceType string
 
 const (
@@ -79,13 +79,13 @@ func NewDropletsService(client *godo.Client) DropletsService {
 }
 
 func (ds *dropletsService) List() (Droplets, error) {
-	f := func(opt *godo.ListOptions) ([]interface{}, *godo.Response, error) {
+	f := func(opt *godo.ListOptions) ([]any, *godo.Response, error) {
 		list, resp, err := ds.client.Droplets.List(context.TODO(), opt)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		si := make([]interface{}, len(list))
+		si := make([]any, len(list))
 		for i := range list {
 			si[i] = list[i]
 		}
@@ -108,13 +108,13 @@ func (ds *dropletsService) List() (Droplets, error) {
 }
 
 func (ds *dropletsService) ListByTag(tagName string) (Droplets, error) {
-	f := func(opt *godo.ListOptions) ([]interface{}, *godo.Response, error) {
+	f := func(opt *godo.ListOptions) ([]any, *godo.Response, error) {
 		list, resp, err := ds.client.Droplets.ListByTag(context.TODO(), tagName, opt)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		si := make([]interface{}, len(list))
+		si := make([]any, len(list))
 		for i := range list {
 			si[i] = list[i]
 		}
@@ -179,7 +179,7 @@ func (ds *dropletsService) CreateMultiple(dmcr *godo.DropletMultiCreateRequest) 
 		return nil, err
 	}
 
-	var droplets Droplets
+	droplets := make(Droplets, 0, len(godoDroplets))
 	for _, d := range godoDroplets {
 		droplets = append(droplets, Droplet{Droplet: &d})
 	}
@@ -198,13 +198,13 @@ func (ds *dropletsService) DeleteByTag(tag string) error {
 }
 
 func (ds *dropletsService) Kernels(id int) (Kernels, error) {
-	f := func(opt *godo.ListOptions) ([]interface{}, *godo.Response, error) {
+	f := func(opt *godo.ListOptions) ([]any, *godo.Response, error) {
 		list, resp, err := ds.client.Droplets.Kernels(context.TODO(), id, opt)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		si := make([]interface{}, len(list))
+		si := make([]any, len(list))
 		for i := range list {
 			si[i] = list[i]
 		}
@@ -227,13 +227,13 @@ func (ds *dropletsService) Kernels(id int) (Kernels, error) {
 }
 
 func (ds *dropletsService) Snapshots(id int) (Images, error) {
-	f := func(opt *godo.ListOptions) ([]interface{}, *godo.Response, error) {
+	f := func(opt *godo.ListOptions) ([]any, *godo.Response, error) {
 		list, resp, err := ds.client.Droplets.Snapshots(context.TODO(), id, opt)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		si := make([]interface{}, len(list))
+		si := make([]any, len(list))
 		for i := range list {
 			si[i] = list[i]
 		}
@@ -256,13 +256,13 @@ func (ds *dropletsService) Snapshots(id int) (Images, error) {
 }
 
 func (ds *dropletsService) Backups(id int) (Images, error) {
-	f := func(opt *godo.ListOptions) ([]interface{}, *godo.Response, error) {
+	f := func(opt *godo.ListOptions) ([]any, *godo.Response, error) {
 		list, resp, err := ds.client.Droplets.Backups(context.TODO(), id, opt)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		si := make([]interface{}, len(list))
+		si := make([]any, len(list))
 		for i := range list {
 			si[i] = list[i]
 		}
@@ -285,13 +285,13 @@ func (ds *dropletsService) Backups(id int) (Images, error) {
 }
 
 func (ds *dropletsService) Actions(id int) (Actions, error) {
-	f := func(opt *godo.ListOptions) ([]interface{}, *godo.Response, error) {
+	f := func(opt *godo.ListOptions) ([]any, *godo.Response, error) {
 		list, resp, err := ds.client.Droplets.Actions(context.TODO(), id, opt)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		si := make([]interface{}, len(list))
+		si := make([]any, len(list))
 		for i := range list {
 			si[i] = list[i]
 		}

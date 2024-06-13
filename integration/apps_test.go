@@ -3,7 +3,7 @@ package integration
 import (
 	"bytes"
 	"encoding/json"
-	"io/ioutil"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MakeNowJust/heredoc"
 	"github.com/digitalocean/godo"
 	"github.com/gorilla/websocket"
 	"github.com/sclevine/spec"
@@ -87,16 +88,38 @@ var (
 	}
 	testAppUUID = "93a37175-f520-4a12-a7ad-26e63491dbf4"
 	testApp     = &godo.App{
-		ID:               testAppUUID,
-		Spec:             &testAppSpec,
-		ActiveDeployment: testDeployment,
-		CreatedAt:        testAppTime,
-		UpdatedAt:        testAppTime,
+		ID:                testAppUUID,
+		Spec:              &testAppSpec,
+		ActiveDeployment:  testDeployment,
+		PendingDeployment: testDeployment,
+		CreatedAt:         testAppTime,
+		UpdatedAt:         testAppTime,
+	}
+	testAppInProgress = &godo.App{
+		ID:                   testAppUUID,
+		Spec:                 &testAppSpec,
+		InProgressDeployment: testDeployment,
+		CreatedAt:            testAppTime,
+		UpdatedAt:            testAppTime,
+	}
+	testBuildpack = &godo.Buildpack{
+		Name:         "Go",
+		ID:           "digitalocean/go",
+		Version:      "1.2.3",
+		MajorVersion: 1,
+		Latest:       true,
+		DocsLink:     "ftp://docs/go",
+		Description:  []string{"Install Go"},
 	}
 	testAppResponse = struct {
 		App *godo.App `json:"app"`
 	}{
 		App: testApp,
+	}
+	testAppResponseInProgress = struct {
+		App *godo.App `json:"app"`
+	}{
+		App: testAppInProgress,
 	}
 	testAppsResponse = struct {
 		Apps []*godo.App `json:"apps"`
@@ -130,20 +153,22 @@ var (
 			Default:     true,
 		}},
 	}
+
 	testAppsOutput = `ID                                      Spec Name    Default Ingress    Active Deployment ID                    In Progress Deployment ID    Created At                       Updated At
 93a37175-f520-4a12-a7ad-26e63491dbf4    test                            f4e37431-a0f4-458f-8f9f-5c9a61d8562f                                 1970-01-01 00:00:01 +0000 UTC    1970-01-01 00:00:01 +0000 UTC`
-	testDeploymentsOutput = `ID                                      Cause     Progress    Created At                       Updated At
-f4e37431-a0f4-458f-8f9f-5c9a61d8562f    Manual    0/1         1970-01-01 00:00:01 +0000 UTC    1970-01-01 00:00:01 +0000 UTC`
-	testActiveDeploymentOutput = `ID                                      Cause     Progress    Created At                       Updated At
-f4e37431-a0f4-458f-8f9f-5c9a61d8562f    Manual    1/1         1970-01-01 00:00:01 +0000 UTC    1970-01-01 00:00:01 +0000 UTC`
+	testDeploymentsOutput = `ID                                      Cause     Progress    Phase             Created At                       Updated At
+f4e37431-a0f4-458f-8f9f-5c9a61d8562f    Manual    0/1         PENDING_DEPLOY    1970-01-01 00:00:01 +0000 UTC    1970-01-01 00:00:01 +0000 UTC`
+	testActiveDeploymentOutput = `ID                                      Cause     Progress    Phase     Created At                       Updated At
+f4e37431-a0f4-458f-8f9f-5c9a61d8562f    Manual    1/1         ACTIVE    1970-01-01 00:00:01 +0000 UTC    1970-01-01 00:00:01 +0000 UTC`
 	testRegionsOutput = `Region    Label        Continent    Data Centers    Is Disabled?    Reason (if disabled)    Is Default?
 ams       Amsterdam    Europe       [ams3]          false                                   true`
 )
 
 var _ = suite("apps/create", func(t *testing.T, when spec.G, it spec.S) {
 	var (
-		expect *require.Assertions
-		server *httptest.Server
+		expect          *require.Assertions
+		server          *httptest.Server
+		deploymentCount int
 	)
 
 	it.Before(func() {
@@ -174,6 +199,44 @@ var _ = suite("apps/create", func(t *testing.T, when spec.G, it spec.S) {
 				assert.Equal(t, testAppSpec, *r.Spec)
 
 				json.NewEncoder(w).Encode(testAppResponse)
+			case "/v2/apps/" + testAppUUID:
+				auth := req.Header.Get("Authorization")
+				if auth != "Bearer some-magic-token" {
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+				if req.Method != http.MethodGet {
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+				json.NewEncoder(w).Encode(testAppResponse)
+			case "/v2/apps/" + testAppUUID + "/deployments":
+				auth := req.Header.Get("Authorization")
+				if auth != "Bearer some-magic-token" {
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+				if req.Method != http.MethodGet {
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+				json.NewEncoder(w).Encode(testDeploymentsResponse)
+			case "/v2/apps/" + testAppUUID + "/deployments/" + testDeploymentUUID:
+				auth := req.Header.Get("Authorization")
+				if auth != "Bearer some-magic-token" {
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+				if req.Method != http.MethodGet {
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+				if deploymentCount > 0 {
+					json.NewEncoder(w).Encode(testDeploymentActiveResponse)
+				} else {
+					json.NewEncoder(w).Encode(testDeploymentResponse)
+					deploymentCount++
+				}
 			default:
 				dump, err := httputil.DumpRequest(req, true)
 				if err != nil {
@@ -186,12 +249,9 @@ var _ = suite("apps/create", func(t *testing.T, when spec.G, it spec.S) {
 	})
 
 	it("creates an app", func() {
-		specFile, err := ioutil.TempFile("", "spec")
+		specFile, err := os.CreateTemp(t.TempDir(), "spec")
 		require.NoError(t, err)
-		defer func() {
-			os.Remove(specFile.Name())
-			specFile.Close()
-		}()
+		defer specFile.Close()
 
 		err = json.NewEncoder(specFile).Encode(&testAppSpec)
 		require.NoError(t, err)
@@ -209,6 +269,151 @@ var _ = suite("apps/create", func(t *testing.T, when spec.G, it spec.S) {
 		expect.NoError(err)
 
 		expectedOutput := "Notice: App created\n" + testAppsOutput
+		expect.Equal(expectedOutput, strings.TrimSpace(string(output)))
+	})
+	when("the wait flag is passed", func() {
+		it("creates an app and polls for status", func() {
+			specFile, err := os.CreateTemp(t.TempDir(), "spec")
+			require.NoError(t, err)
+			defer specFile.Close()
+
+			err = json.NewEncoder(specFile).Encode(&testAppSpec)
+			require.NoError(t, err)
+			cmd := exec.Command(builtBinaryPath,
+				"-t", "some-magic-token",
+				"-u", server.URL,
+				"apps",
+				"create",
+				"--spec",
+				specFile.Name(),
+				"--wait",
+			)
+			output, err := cmd.CombinedOutput()
+			expect.NoError(err)
+			expectedOutput := "Notice: App creation is in progress, waiting for app to be running\n.\nNotice: App created\n" + testAppsOutput
+			expect.Equal(expectedOutput, strings.TrimSpace(string(output)))
+		})
+	})
+	when("the upsert flag is passed", func() {
+		it("creates an app or updates if already exists", func() {
+			specFile, err := os.CreateTemp(t.TempDir(), "spec")
+			require.NoError(t, err)
+			defer specFile.Close()
+
+			err = json.NewEncoder(specFile).Encode(&testAppSpec)
+			require.NoError(t, err)
+			cmd := exec.Command(builtBinaryPath,
+				"-t", "some-magic-token",
+				"-u", server.URL,
+				"apps",
+				"create",
+				"--upsert",
+				"--spec",
+				specFile.Name(),
+			)
+			output, err := cmd.CombinedOutput()
+			expect.NoError(err)
+			expectedOutput := "Notice: App created\n" + testAppsOutput
+			expect.Equal(expectedOutput, strings.TrimSpace(string(output)))
+		})
+	})
+})
+
+var _ = suite("apps/create-upsert", func(t *testing.T, when spec.G, it spec.S) {
+	var (
+		expect          *require.Assertions
+		server          *httptest.Server
+		appsCreateCount int
+	)
+
+	it.Before(func() {
+		expect = require.New(t)
+
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			w.Header().Add("content-type", "application/json")
+
+			switch req.URL.Path {
+			case "/v2/apps/" + testAppUUID:
+				auth := req.Header.Get("Authorization")
+				if auth != "Bearer some-magic-token" {
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+				if req.Method != http.MethodPut {
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+				var r godo.AppUpdateRequest
+				err := json.NewDecoder(req.Body).Decode(&r)
+				if err != nil {
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				assert.Equal(t, testAppSpec, *r.Spec)
+				json.NewEncoder(w).Encode(testAppResponse)
+			case "/v2/apps":
+				auth := req.Header.Get("Authorization")
+				if auth != "Bearer some-magic-token" {
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+
+				if req.Method != http.MethodPost && req.Method != http.MethodGet {
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+
+				if req.Method == http.MethodPost {
+					if appsCreateCount > 0 {
+						var r godo.AppCreateRequest
+						err := json.NewDecoder(req.Body).Decode(&r)
+						if err != nil {
+							w.WriteHeader(http.StatusBadRequest)
+							return
+						}
+						assert.Equal(t, testAppSpec, *r.Spec)
+						json.NewEncoder(w).Encode(testAppResponse)
+					} else {
+						w.WriteHeader(http.StatusConflict)
+						appsCreateCount++
+					}
+				}
+				if req.Method == http.MethodGet {
+					json.NewEncoder(w).Encode(testAppsResponse)
+				}
+			default:
+				dump, err := httputil.DumpRequest(req, true)
+				if err != nil {
+					t.Fatal("failed to dump request")
+				}
+
+				t.Fatalf("received unknown request: %s", dump)
+			}
+		}))
+	})
+
+	it("uses upsert to update existing app", func() {
+		specFile, err := os.CreateTemp(t.TempDir(), "spec")
+		require.NoError(t, err)
+		defer specFile.Close()
+
+		err = json.NewEncoder(specFile).Encode(&testAppSpec)
+		require.NoError(t, err)
+
+		cmd := exec.Command(builtBinaryPath,
+			"-t", "some-magic-token",
+			"-u", server.URL,
+			"apps",
+			"create",
+			"--upsert",
+			"--spec",
+			specFile.Name(),
+		)
+
+		output, err := cmd.CombinedOutput()
+		expect.NoError(err)
+
+		expectedOutput := "Notice: App already exists, updating\nNotice: App created\n" + testAppsOutput
 		expect.Equal(expectedOutput, strings.TrimSpace(string(output)))
 	})
 })
@@ -322,8 +527,9 @@ var _ = suite("apps/list", func(t *testing.T, when spec.G, it spec.S) {
 
 var _ = suite("apps/update", func(t *testing.T, when spec.G, it spec.S) {
 	var (
-		expect *require.Assertions
-		server *httptest.Server
+		expect          *require.Assertions
+		server          *httptest.Server
+		deploymentCount int
 	)
 
 	it.Before(func() {
@@ -339,21 +545,50 @@ var _ = suite("apps/update", func(t *testing.T, when spec.G, it spec.S) {
 					w.WriteHeader(http.StatusUnauthorized)
 					return
 				}
-
-				if req.Method != http.MethodPut {
+				if req.Method != http.MethodPut && req.Method != http.MethodGet {
 					w.WriteHeader(http.StatusMethodNotAllowed)
 					return
 				}
-
-				var r godo.AppUpdateRequest
-				err := json.NewDecoder(req.Body).Decode(&r)
-				if err != nil {
-					w.WriteHeader(http.StatusBadRequest)
+				if req.Method == http.MethodPut {
+					var r godo.AppUpdateRequest
+					err := json.NewDecoder(req.Body).Decode(&r)
+					if err != nil {
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+					assert.Equal(t, testAppSpec, *r.Spec)
+					json.NewEncoder(w).Encode(testAppResponse)
+				}
+				if req.Method == http.MethodGet {
+					json.NewEncoder(w).Encode(testAppResponse)
+				}
+			case "/v2/apps/" + testAppUUID + "/deployments":
+				auth := req.Header.Get("Authorization")
+				if auth != "Bearer some-magic-token" {
+					w.WriteHeader(http.StatusUnauthorized)
 					return
 				}
-				assert.Equal(t, testAppSpec, *r.Spec)
-
-				json.NewEncoder(w).Encode(testAppResponse)
+				if req.Method != http.MethodGet {
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+				json.NewEncoder(w).Encode(testDeploymentsResponse)
+			case "/v2/apps/" + testAppUUID + "/deployments/" + testDeploymentUUID:
+				auth := req.Header.Get("Authorization")
+				if auth != "Bearer some-magic-token" {
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+				if req.Method != http.MethodGet {
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+				if deploymentCount > 0 {
+					json.NewEncoder(w).Encode(testDeploymentActiveResponse)
+				} else {
+					json.NewEncoder(w).Encode(testDeploymentResponse)
+					deploymentCount++
+				}
 			default:
 				dump, err := httputil.DumpRequest(req, true)
 				if err != nil {
@@ -366,12 +601,9 @@ var _ = suite("apps/update", func(t *testing.T, when spec.G, it spec.S) {
 	})
 
 	it("updates an app", func() {
-		specFile, err := ioutil.TempFile("", "spec")
+		specFile, err := os.CreateTemp(t.TempDir(), "spec")
 		require.NoError(t, err)
-		defer func() {
-			os.Remove(specFile.Name())
-			specFile.Close()
-		}()
+		defer specFile.Close()
 
 		err = json.NewEncoder(specFile).Encode(&testAppSpec)
 		require.NoError(t, err)
@@ -391,6 +623,30 @@ var _ = suite("apps/update", func(t *testing.T, when spec.G, it spec.S) {
 
 		expectedOutput := "Notice: App updated\n" + testAppsOutput
 		expect.Equal(expectedOutput, strings.TrimSpace(string(output)))
+	})
+	when("the wait flag is passed", func() {
+		it("updates an app and polls for status", func() {
+			specFile, err := os.CreateTemp(t.TempDir(), "spec")
+			require.NoError(t, err)
+			defer specFile.Close()
+
+			err = json.NewEncoder(specFile).Encode(&testAppSpec)
+			require.NoError(t, err)
+			cmd := exec.Command(builtBinaryPath,
+				"-t", "some-magic-token",
+				"-u", server.URL,
+				"apps",
+				"update",
+				testAppUUID,
+				"--spec",
+				specFile.Name(),
+				"--wait",
+			)
+			output, err := cmd.CombinedOutput()
+			expect.NoError(err)
+			expectedOutput := "Notice: App update is in progress, waiting for app to be running\n.\nNotice: App updated\n" + testAppsOutput
+			expect.Equal(expectedOutput, strings.TrimSpace(string(output)))
+		})
 	})
 })
 
@@ -545,7 +801,7 @@ var _ = suite("apps/create-deployment", func(t *testing.T, when spec.G, it spec.
 			output, _ := cmd.CombinedOutput()
 			//expect.NoError(err)
 
-			expectedOutput := "Notice: App deplpyment is in progress, waiting for deployment to be running\n.\nNotice: Deployment created\n" + testActiveDeploymentOutput
+			expectedOutput := "Notice: App deployment is in progress, waiting for deployment to be running\n.\nNotice: Deployment created\n" + testActiveDeploymentOutput
 			expect.Equal(expectedOutput, strings.TrimSpace(string(output)))
 		})
 	})
@@ -757,6 +1013,7 @@ var _ = suite("apps/get-logs", func(t *testing.T, when spec.G, it spec.S) {
 			"service",
 			"--deployment="+testDeploymentUUID,
 			"--type=run",
+			"--tail=1",
 			"-f",
 		)
 
@@ -952,5 +1209,140 @@ services:
 
 		expectedOutput := "Error: parsing app spec: json: cannot unmarshal object into Go struct field AppSpec.services of type []*godo.AppServiceSpec"
 		expect.Equal(expectedOutput, strings.TrimSpace(string(output)))
+	})
+})
+
+var _ = suite("apps/list-buildpacks", func(t *testing.T, when spec.G, it spec.S) {
+	var (
+		expect *require.Assertions
+		server *httptest.Server
+	)
+
+	it.Before(func() {
+		expect = require.New(t)
+
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			w.Header().Add("content-type", "application/json")
+
+			switch req.URL.Path {
+			case "/v2/apps/buildpacks":
+				auth := req.Header.Get("Authorization")
+				if auth != "Bearer some-magic-token" {
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+
+				if req.Method != http.MethodGet {
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+
+				json.NewEncoder(w).Encode(struct {
+					Buildpacks []*godo.Buildpack `json:"buildpacks"`
+				}{
+					Buildpacks: []*godo.Buildpack{testBuildpack},
+				})
+			default:
+				dump, err := httputil.DumpRequest(req, true)
+				if err != nil {
+					t.Fatal("failed to dump request")
+				}
+
+				t.Fatalf("received unknown request: %s", dump)
+			}
+		}))
+	})
+
+	it("lists buildpacks", func() {
+		cmd := exec.Command(builtBinaryPath,
+			"-t", "some-magic-token",
+			"-u", server.URL,
+			"apps",
+			"list-buildpacks",
+		)
+
+		output, err := cmd.CombinedOutput()
+		expect.NoError(err)
+
+		expect.Equal(heredoc.Doc(`
+			Name    ID                 Version    Documentation
+			Go      digitalocean/go    1.2.3      ftp://docs/go
+		`), string(output))
+	})
+})
+
+var _ = suite("apps/upgrade-buildpack", func(t *testing.T, when spec.G, it spec.S) {
+	var (
+		expect *require.Assertions
+		server *httptest.Server
+	)
+
+	it.Before(func() {
+		expect = require.New(t)
+
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			w.Header().Add("content-type", "application/json")
+
+			switch req.URL.Path {
+			case fmt.Sprintf("/v2/apps/%s/upgrade_buildpack", testAppUUID):
+				auth := req.Header.Get("Authorization")
+				if auth != "Bearer some-magic-token" {
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+
+				if req.Method != http.MethodPost {
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+
+				var r godo.UpgradeBuildpackOptions
+				err := json.NewDecoder(req.Body).Decode(&r)
+				if err != nil {
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				assert.Equal(t, godo.UpgradeBuildpackOptions{
+					BuildpackID:       "digitalocean/go",
+					MajorVersion:      3,
+					TriggerDeployment: true,
+				}, r)
+
+				json.NewEncoder(w).Encode(&godo.UpgradeBuildpackResponse{
+					AffectedComponents: []string{"api", "www"},
+					Deployment:         testDeployment,
+				})
+			default:
+				dump, err := httputil.DumpRequest(req, true)
+				if err != nil {
+					t.Fatal("failed to dump request")
+				}
+
+				t.Fatalf("received unknown request: %s", dump)
+			}
+		}))
+	})
+
+	it("upgrades buildpacks", func() {
+		cmd := exec.Command(builtBinaryPath,
+			"-t", "some-magic-token",
+			"-u", server.URL,
+			"apps",
+			"upgrade-buildpack",
+			"--buildpack", "digitalocean/go",
+			"--major-version", "3",
+			testAppUUID,
+		)
+
+		output, err := cmd.CombinedOutput()
+
+		expect.Equal(heredoc.Doc(`
+			upgraded buildpack digitalocean/go. 2 components were affected: [api www].
+			triggered a new deployment to apply the upgrade:
+			
+			ID                                      Cause     Progress    Phase             Created At                       Updated At
+			f4e37431-a0f4-458f-8f9f-5c9a61d8562f    Manual    0/1         PENDING_DEPLOY    1970-01-01 00:00:01 +0000 UTC    1970-01-01 00:00:01 +0000 UTC
+		`), string(output))
+		expect.NoError(err)
 	})
 })

@@ -26,6 +26,7 @@ func BillingHistory() *Command {
 			Short:   "Display commands for retrieving your billing history",
 			Long:    "The subcommands of `doctl billing-history` are used to access the billing history for your DigitalOcean account.",
 			Aliases: []string{"bh"},
+			GroupID: viewBillingGroup,
 		},
 	}
 	listBillingHistoryDesc := `This command retrieves the following details for each event in your billing history:
@@ -35,11 +36,11 @@ func BillingHistory() *Command {
 - The amount of the event in USD
 - The invoice ID associated with the event, if applicable
 - The invoice UUID associated with the event, if applicable
-
 `
 
-	CmdBuilder(cmd, RunBillingHistoryList, "list", "Retrieve a paginated billing history for a user",
+	listBillingHistory := CmdBuilder(cmd, RunBillingHistoryList, "list", "Retrieve a paginated billing history for a user",
 		listBillingHistoryDesc, Writer, aliasOpt("ls"), displayerType(&displayers.BillingHistory{}))
+	listBillingHistory.Example = `The following example uses the ` + "`" + `--format` + "`" + ` flag to display only the date and description of each event in your billing history: doctl billing-history list --format Date,Description`
 
 	return cmd
 }

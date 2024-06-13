@@ -23,11 +23,11 @@ import (
 	"text/tabwriter"
 )
 
-// Displayable is a displable entity. These are used for printing results.
+// Displayable is a displayable entity. These are used for printing results.
 type Displayable interface {
 	Cols() []string
 	ColMap() map[string]string
-	KV() []map[string]interface{}
+	KV() []map[string]any
 	JSON(io.Writer) error
 }
 
@@ -76,7 +76,7 @@ func DisplayText(item Displayable, out io.Writer, noHeaders bool, includeCols []
 	}
 
 	if !noHeaders {
-		headers := []string{}
+		headers := make([]string, 0, len(cols))
 		for _, k := range cols {
 			col := item.ColMap()[k]
 			if col == "" {
@@ -89,8 +89,8 @@ func DisplayText(item Displayable, out io.Writer, noHeaders bool, includeCols []
 	}
 
 	for _, r := range item.KV() {
-		values := []interface{}{}
-		formats := []string{}
+		values := make([]any, 0, len(cols))
+		formats := make([]string, 0, len(cols))
 
 		for _, col := range cols {
 			v := r[col]
@@ -117,7 +117,7 @@ func DisplayText(item Displayable, out io.Writer, noHeaders bool, includeCols []
 	return w.Flush()
 }
 
-func writeJSON(item interface{}, w io.Writer) error {
+func writeJSON(item any, w io.Writer) error {
 	b, err := json.Marshal(item)
 	if err != nil {
 		return err
@@ -135,7 +135,7 @@ func writeJSON(item interface{}, w io.Writer) error {
 
 // containsOnlyNiSlice returns true if the given interface's concrete type is
 // a pointer to a struct that contains a single nil slice field.
-func containsOnlyNilSlice(i interface{}) bool {
+func containsOnlyNilSlice(i any) bool {
 	if reflect.TypeOf(i).Kind() != reflect.Ptr {
 		return false
 	}

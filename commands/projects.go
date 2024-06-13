@@ -33,62 +33,69 @@ Projects allow you to organize your DigitalOcean resources (like Droplets, Space
 
 	projectDetails := `
 
-  - The project's ID, in UUID format
-  - The project owner's account UUID
-  - The name of the project
-  - The project's description
-  - The project's specified purpose
-  - The project's environment (Development, Staging, or Production)
-  - A boolean indicating whether it is you default project
-  - The date and time when the project was created
-  - The date and time when the project was last updated
+- The project's ID, in UUID format
+- The project owner's account UUID
+- The name of the project
+- The project's description
+- The project's specified purpose
+- The project's environment (Development, Staging, or Production)
+- A boolean indicating whether it is you default project
+- The date and time when the project was created
+- The date and time when the project was last updated
 `
 
 	cmd := &Command{
 		Command: &cobra.Command{
-			Use:   "projects",
-			Short: "Manage projects and assign resources to them",
-			Long:  "The subcommands of `doctl projects` allow you to create, manage, and assign resources to your projects." + projectsDesc,
+			Use:     "projects",
+			Short:   "Manage projects and assign resources to them",
+			Long:    "The subcommands of `doctl projects` allow you to create, manage, and assign resources to your projects." + projectsDesc,
+			GroupID: manageResourcesGroup,
 		},
 	}
 
-	CmdBuilder(cmd, RunProjectsList, "list", "List existing projects",
-		"List details for for your DigitalOcean projects, including:"+projectDetails,
+	cmdProjectsList := CmdBuilder(cmd, RunProjectsList, "list", "List existing projects",
+		"List details for your DigitalOcean projects, including:"+projectDetails,
 		Writer, aliasOpt("ls"), displayerType(&displayers.Project{}))
-	CmdBuilder(cmd, RunProjectsGet, "get <id>", "Retrieve details for a specific project",
-		"Display the following details for an existing project specified by its ID (use `default` for <id> to retieve your default project):"+projectDetails,
+	cmdProjectsList.Example = `The following example retrieves a list of projects on your account and uses the ` + "`" + `--format` + "`" + ` flag to return only the ID, name, and purpose of each project: doctl projects list --format ID,Name,Purpose`
+
+	cmdProjectsGet := CmdBuilder(cmd, RunProjectsGet, "get <id>", "Retrieve details for a specific project",
+		"Retrieves the following details for an existing project (use `default` as the <id> to retrieve details about your default project):"+projectDetails,
 		Writer, aliasOpt("g"), displayerType(&displayers.Project{}))
+	cmdProjectsGet.Example = `The following example retrieves details for a project with the ID ` + "`" + `f81d4fae-7dec-11d0-a765-00a0c91e6bf6` + "`" + `: doctl projects get f81d4fae-7dec-11d0-a765-00a0c91e6bf6`
 
 	cmdProjectsCreate := CmdBuilder(cmd, RunProjectsCreate, "create",
-		"Create a new project", "Create a new project to organize your resources specifying its name and purpose."+projectsDesc,
+		"Create a new project", "Creates a new project in your account."+projectsDesc,
 		Writer, aliasOpt("c"), displayerType(&displayers.Project{}))
 	AddStringFlag(cmdProjectsCreate, doctl.ArgProjectName, "", "",
-		"A name for the project", requiredOpt())
+		"The project's name", requiredOpt())
 	AddStringFlag(cmdProjectsCreate, doctl.ArgProjectPurpose, "", "",
 		"The project's purpose", requiredOpt())
 	AddStringFlag(cmdProjectsCreate, doctl.ArgProjectDescription, "", "",
 		"A description of the project")
 	AddStringFlag(cmdProjectsCreate, doctl.ArgProjectEnvironment, "", "",
 		"The environment in which your project resides. Possible values: `Development`, `Staging`, or `Production`")
+	cmdProjectsCreate.Example = `The following example creates a project named ` + "`" + `Example Project` + "`" + ` with the purpose "Frontend development": doctl projects create --name "Example Project" --purpose "Frontend development"`
 
 	cmdProjectsUpdate := CmdBuilder(cmd, RunProjectsUpdate, "update <id>",
 		"Update an existing project",
-		"Update information about an existing project specified by its ID (use `default` for <id> to update your default project).",
+		"Updates information about an existing project. Use `default` as the <id> to update your default project.",
 		Writer, aliasOpt("u"), displayerType(&displayers.Project{}))
-	AddStringFlag(cmdProjectsUpdate, doctl.ArgProjectName, "", "", "A name for the project")
+	AddStringFlag(cmdProjectsUpdate, doctl.ArgProjectName, "", "", "The project's name")
 	AddStringFlag(cmdProjectsUpdate, doctl.ArgProjectPurpose, "", "", "The project's purpose")
 	AddStringFlag(cmdProjectsUpdate, doctl.ArgProjectDescription, "", "",
 		"A description of the project")
 	AddStringFlag(cmdProjectsUpdate, doctl.ArgProjectEnvironment, "", "",
 		"The environment in which your project resides. Possible values: `Development`, `Staging`, or `Production`")
 	AddBoolFlag(cmdProjectsUpdate, doctl.ArgProjectIsDefault, "", false,
-		"Set the specified project as your default project")
+		"Sets the specified project as your default project")
+	cmdProjectsUpdate.Example = `The following example updates the project with the ID ` + "`" + `f81d4fae-7dec-11d0-a765-00a0c91e6bf6` + "`" + ` to have the name ` + "`" + `API Project` + "`" + ` and the purpose "Backend development": doctl projects update f81d4fae-7dec-11d0-a765-00a0c91e6bf6 --name "API Project" --purpose "Backend development"`
 
 	cmdProjectsDelete := CmdBuilder(cmd, RunProjectsDelete, "delete <id> [<id> ...]",
-		"Delete the specified project", "Delete a project by specifying its ID. To be deleted, a project must not have any resources assigned to it.",
+		"Delete the specified project", "Deletes a project. To be deleted, a project must not have any resources assigned to it.",
 		Writer, aliasOpt("d", "rm"))
 	AddBoolFlag(cmdProjectsDelete, doctl.ArgForce, doctl.ArgShortForce, false,
-		"Delete the project without confirmation")
+		"Deletes the project without confirmation")
+	cmdProjectsDelete.Example = `The following example deletes the project with the ID ` + "`" + `f81d4fae-7dec-11d0-a765-00a0c91e6bf6` + "`" + `: doctl projects delete f81d4fae-7dec-11d0-a765-00a0c91e6bf6`
 
 	cmd.AddCommand(ProjectResourcesCmd())
 
@@ -111,13 +118,14 @@ A valid URN has the format: ` + "`" + `do:resource_type:resource_id` + "`" + `. 
 
   - ` + "`" + `do:droplet:4126873` + "`" + `
   - ` + "`" + `do:volume:6fc4c277-ea5c-448a-93cd-dd496cfef71f` + "`" + `
+  - ` + "`" + `do:app:be5aab85-851b-4cab-b2ed-98d5a63ba4e8` + "`" + `
 `
 
 	CmdBuilder(cmd, RunProjectResourcesList, "list <project-id>", "List resources assigned to a project",
 		"List all of the resources assigned to the specified project displaying their uniform resource names (\"URNs\").",
 		Writer, aliasOpt("ls"), displayerType(&displayers.ProjectResource{}))
 	CmdBuilder(cmd, RunProjectResourcesGet, "get <urn>", "Retrieve a resource by its URN",
-		"Retrieve information about a resource by specifying its uniform resource name (\"URN\"). Currently, ony Droplets, floating IPs, load balancers, domains, and volumes are supported."+urnDesc,
+		"Retrieve information about a resource by specifying its uniform resource name (\"URN\"). Currently, only Droplets, floating IPs, load balancers, domains, volumes, and App Platform apps are supported."+urnDesc,
 		Writer, aliasOpt("g"), displayerType(&displayers.ProjectResource{}))
 
 	cmdProjectResourcesAssign := CmdBuilder(cmd, RunProjectResourcesAssign,
@@ -258,13 +266,20 @@ func RunProjectResourcesGet(c *CmdConfig) error {
 	case "droplet":
 		return RunDropletGet(c)
 	case "floatingip":
-		return RunFloatingIPGet(c)
+		return RunReservedIPGet(c)
+	case "reservedip":
+		return RunReservedIPGet(c)
 	case "loadbalancer":
 		return RunLoadBalancerGet(c)
 	case "domain":
 		return RunDomainGet(c)
 	case "volume":
 		return RunVolumeGet(c)
+	case "kubernetes":
+		k8sCmdService := kubernetesCommandService()
+		return k8sCmdService.RunKubernetesClusterGet(c)
+	case "app":
+		return RunAppsGet(c)
 	default:
 		return fmt.Errorf("%q is an invalid resource type, consult the documentation", parts[1])
 	}

@@ -19,12 +19,12 @@ import (
 	"github.com/digitalocean/godo"
 )
 
-// Image is a werapper for godo.Image
+// Image is a wrapper for godo.Image
 type Image struct {
 	*godo.Image
 }
 
-// Images is a slice of Droplet.
+// Images is a slice of Image.
 type Images []Image
 
 // ImagesService is the godo ImagesService interface.
@@ -113,13 +113,13 @@ func (is *imagesService) Create(icr *godo.CustomImageCreateRequest) (*Image, err
 type listFn func(context.Context, *godo.ListOptions) ([]godo.Image, *godo.Response, error)
 
 func (is *imagesService) listImages(lFn listFn, public bool) (Images, error) {
-	fn := func(opt *godo.ListOptions) ([]interface{}, *godo.Response, error) {
+	fn := func(opt *godo.ListOptions) ([]any, *godo.Response, error) {
 		list, resp, err := lFn(context.TODO(), opt)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		si := []interface{}{}
+		si := []any{}
 		for _, i := range list {
 			if (public && i.Public) || !i.Public {
 				si = append(si, i)
@@ -134,7 +134,7 @@ func (is *imagesService) listImages(lFn listFn, public bool) (Images, error) {
 		return nil, err
 	}
 
-	var list Images
+	list := make(Images, 0, len(si))
 	for i := range si {
 		image := si[i].(godo.Image)
 		list = append(list, Image{Image: &image})

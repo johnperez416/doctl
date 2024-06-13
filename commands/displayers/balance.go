@@ -45,15 +45,13 @@ func (a *Balance) ColMap() map[string]string {
 	}
 }
 
-func (a *Balance) KV() []map[string]interface{} {
-	out := []map[string]interface{}{}
-	x := map[string]interface{}{
+func (a *Balance) KV() []map[string]any {
+	x := map[string]any{
 		"MonthToDateBalance": a.MonthToDateBalance,
 		"AccountBalance":     a.AccountBalance,
 		"MonthToDateUsage":   a.MonthToDateUsage,
 		"GeneratedAt":        a.GeneratedAt.Format(time.RFC3339),
 	}
-	out = append(out, x)
 
-	return out
+	return []map[string]any{x}
 }

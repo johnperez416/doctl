@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"io/ioutil"
 	"net/url"
 	"os"
 	"testing"
@@ -27,6 +26,7 @@ func TestAppsCommand(t *testing.T) {
 		"list",
 		"update",
 		"delete",
+		"dev",
 		"create-deployment",
 		"get-deployment",
 		"list-deployments",
@@ -35,6 +35,10 @@ func TestAppsCommand(t *testing.T) {
 		"propose",
 		"spec",
 		"tier",
+		"list-alerts",
+		"update-alert-destinations",
+		"list-buildpacks",
+		"upgrade-buildpack",
 	)
 }
 
@@ -71,16 +75,63 @@ var (
 		TierUpgradeTo:   "professional-xs",
 		TierDowngradeTo: "basic-xxxs",
 	}
+
+	testAlerts = []*godo.AppAlert{
+		{
+			ID: "c586fc0d-e8e2-4c50-9bf6-6c0a6b2ed2a7",
+			Spec: &godo.AppAlertSpec{
+				Rule: godo.AppAlertSpecRule_DeploymentFailed,
+			},
+			Emails: []string{"test@example.com", "test2@example.com"},
+			SlackWebhooks: []*godo.AppAlertSlackWebhook{
+				{
+					URL:     "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+					Channel: "channel name",
+				},
+			},
+		},
+	}
+
+	testAlert = godo.AppAlert{
+		ID: "c586fc0d-e8e2-4c50-9bf6-6c0a6b2ed2a7",
+		Spec: &godo.AppAlertSpec{
+			Rule: godo.AppAlertSpecRule_DeploymentFailed,
+		},
+		Emails: []string{"test@example.com", "test2@example.com"},
+		SlackWebhooks: []*godo.AppAlertSlackWebhook{
+			{
+				URL:     "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+				Channel: "channel name",
+			},
+		},
+	}
+
+	testAlertUpdate = godo.AlertDestinationUpdateRequest{
+		Emails: []string{"test@example.com", "test2@example.com"},
+		SlackWebhooks: []*godo.AppAlertSlackWebhook{
+			{
+				URL:     "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+				Channel: "channel name",
+			},
+		},
+	}
+
+	testBuildpack = &godo.Buildpack{
+		Name:         "Go",
+		ID:           "digitalocean/go",
+		Version:      "1.2.3",
+		MajorVersion: 1,
+		Latest:       true,
+		DocsLink:     "ftp://docs/go",
+		Description:  []string{"Install Go"},
+	}
 )
 
 func TestRunAppsCreate(t *testing.T) {
 	withTestClient(t, func(config *CmdConfig, tm *tcMocks) {
-		specFile, err := ioutil.TempFile("", "spec")
+		specFile, err := os.CreateTemp(t.TempDir(), "spec")
 		require.NoError(t, err)
-		defer func() {
-			os.Remove(specFile.Name())
-			specFile.Close()
-		}()
+		defer specFile.Close()
 
 		err = json.NewEncoder(specFile).Encode(&testAppSpec)
 		require.NoError(t, err)
@@ -131,7 +182,7 @@ func TestRunAppsList(t *testing.T) {
 			UpdatedAt: time.Now(),
 		}}
 
-		tm.apps.EXPECT().List().Times(1).Return(apps, nil)
+		tm.apps.EXPECT().List(false).Times(1).Return(apps, nil)
 
 		err := RunAppsList(config)
 		require.NoError(t, err)
@@ -140,12 +191,9 @@ func TestRunAppsList(t *testing.T) {
 
 func TestRunAppsUpdate(t *testing.T) {
 	withTestClient(t, func(config *CmdConfig, tm *tcMocks) {
-		specFile, err := ioutil.TempFile("", "spec")
+		specFile, err := os.CreateTemp(t.TempDir(), "spec")
 		require.NoError(t, err)
-		defer func() {
-			os.Remove(specFile.Name())
-			specFile.Close()
-		}()
+		defer specFile.Close()
 
 		err = json.NewEncoder(specFile).Encode(&testAppSpec)
 		require.NoError(t, err)
@@ -200,6 +248,7 @@ func TestRunAppsCreateDeployment(t *testing.T) {
 				SourceCommitHash: "commit",
 			}},
 			Cause: "Manual",
+			Phase: godo.DeploymentPhase_PendingDeploy,
 			Progress: &godo.DeploymentProgress{
 				PendingSteps: 1,
 				RunningSteps: 0,
@@ -267,7 +316,7 @@ func TestRunAppsCreateDeploymentWithWait(t *testing.T) {
 			Progress: &godo.DeploymentProgress{
 				PendingSteps: 1,
 				RunningSteps: 0,
-				SuccessSteps: 0,
+				SuccessSteps: 1,
 				ErrorSteps:   0,
 				TotalSteps:   1,
 
@@ -282,7 +331,7 @@ func TestRunAppsCreateDeploymentWithWait(t *testing.T) {
 		}
 
 		tm.apps.EXPECT().CreateDeployment(appID, false).Times(1).Return(deployment, nil)
-		tm.apps.EXPECT().GetDeployment(appID, deployment.ID).Times(1).Return(activeDeployment, nil)
+		tm.apps.EXPECT().GetDeployment(appID, deployment.ID).Times(2).Return(activeDeployment, nil)
 
 		config.Args = append(config.Args, appID)
 		config.Doit.Set(config.NS, doctl.ArgCommandWait, true)
@@ -303,6 +352,7 @@ func TestRunAppsGetDeployment(t *testing.T) {
 				SourceCommitHash: "commit",
 			}},
 			Cause: "Manual",
+			Phase: godo.DeploymentPhase_PendingDeploy,
 			Progress: &godo.DeploymentProgress{
 				PendingSteps: 1,
 				RunningSteps: 0,
@@ -340,6 +390,7 @@ func TestRunAppsListDeployments(t *testing.T) {
 				SourceCommitHash: "commit",
 			}},
 			Cause: "Manual",
+			Phase: godo.DeploymentPhase_PendingDeploy,
 			Progress: &godo.DeploymentProgress{
 				PendingSteps: 1,
 				RunningSteps: 0,
@@ -379,13 +430,13 @@ func TestRunAppsGetLogs(t *testing.T) {
 
 	for typeStr, logType := range types {
 		withTestClient(t, func(config *CmdConfig, tm *tcMocks) {
-			tm.apps.EXPECT().GetLogs(appID, deploymentID, component, logType, true).Times(1).Return(&godo.AppLogs{LiveURL: "https://proxy-apps-prod-ams3-001.ondigitalocean.app/?token=aa-bb-11-cc-33"}, nil)
+			tm.apps.EXPECT().GetLogs(appID, deploymentID, component, logType, true, 1).Times(1).Return(&godo.AppLogs{LiveURL: "https://proxy-apps-prod-ams3-001.ondigitalocean.app/?token=aa-bb-11-cc-33"}, nil)
 			tm.listen.EXPECT().Start().Times(1).Return(nil)
 
 			tc := config.Doit.(*doctl.TestConfig)
 			tc.ListenFn = func(url *url.URL, token string, schemaFunc listen.SchemaFunc, out io.Writer) listen.ListenerService {
-				assert.Equal(t, token, "aa-bb-11-cc-33")
-				assert.Equal(t, url.String(), "wss://proxy-apps-prod-ams3-001.ondigitalocean.app/?token=aa-bb-11-cc-33")
+				assert.Equal(t, "aa-bb-11-cc-33", token)
+				assert.Equal(t, "wss://proxy-apps-prod-ams3-001.ondigitalocean.app/?token=aa-bb-11-cc-33", url.String())
 				return tm.listen
 			}
 
@@ -393,6 +444,7 @@ func TestRunAppsGetLogs(t *testing.T) {
 			config.Doit.Set(config.NS, doctl.ArgAppDeployment, deploymentID)
 			config.Doit.Set(config.NS, doctl.ArgAppLogType, typeStr)
 			config.Doit.Set(config.NS, doctl.ArgAppLogFollow, true)
+			config.Doit.Set(config.NS, doctl.ArgAppLogTail, 1)
 
 			err := RunAppsGetLogs(config)
 			require.NoError(t, err)
@@ -484,72 +536,10 @@ var validAppSpec = &godo.AppSpec{
 	},
 }
 
-func Test_parseAppSpec(t *testing.T) {
-	expectedSpec := validAppSpec
-
-	t.Run("json", func(t *testing.T) {
-		spec, err := parseAppSpec([]byte(validJSONSpec))
-		require.NoError(t, err)
-		assert.Equal(t, expectedSpec, spec)
-	})
-	t.Run("yaml", func(t *testing.T) {
-		spec, err := parseAppSpec([]byte(validYAMLSpec))
-		require.NoError(t, err)
-		assert.Equal(t, expectedSpec, spec)
-	})
-	t.Run("invalid", func(t *testing.T) {
-		_, err := parseAppSpec([]byte("invalid spec"))
-		require.Error(t, err)
-	})
-	t.Run("unknown fields", func(t *testing.T) {
-		_, err := parseAppSpec([]byte(unknownFieldSpec))
-		require.Error(t, err)
-	})
-}
-
-func Test_readAppSpec(t *testing.T) {
-	tcs := []struct {
-		name  string
-		setup func(t *testing.T) (path string, stdin io.Reader)
-
-		wantSpec *godo.AppSpec
-		wantErr  error
-	}{
-		{
-			name: "stdin",
-			setup: func(t *testing.T) (string, io.Reader) {
-				return "-", bytes.NewBufferString(validYAMLSpec)
-			},
-			wantSpec: validAppSpec,
-		},
-		{
-			name: "file yaml",
-			setup: func(t *testing.T) (string, io.Reader) {
-				return testTempFile(t, []byte(validJSONSpec)), nil
-			},
-			wantSpec: validAppSpec,
-		},
-	}
-
-	for _, tc := range tcs {
-		t.Run(tc.name, func(t *testing.T) {
-			path, stdin := tc.setup(t)
-			spec, err := readAppSpec(stdin, path)
-			if tc.wantErr != nil {
-				require.Equal(t, tc.wantErr, err)
-			} else {
-				require.NoError(t, err)
-			}
-
-			assert.Equal(t, tc.wantSpec, spec)
-		})
-	}
-}
-
 func testTempFile(t *testing.T, data []byte) string {
 	t.Helper()
 	file := t.TempDir() + "/file"
-	err := ioutil.WriteFile(file, data, 0644)
+	err := os.WriteFile(file, data, 0644)
 	require.NoError(t, err, "writing temp file")
 	return file
 }
@@ -758,6 +748,69 @@ func TestRunAppsTierInstanceSizeGet(t *testing.T) {
 
 		config.Args = append(config.Args, testAppInstanceSize.Slug)
 		err := RunAppsTierInstanceSizeGet(config)
+		require.NoError(t, err)
+	})
+}
+
+func TestRunAppsListAlerts(t *testing.T) {
+	withTestClient(t, func(config *CmdConfig, tm *tcMocks) {
+		appID := uuid.New().String()
+		tm.apps.EXPECT().ListAlerts(appID).Times(1).Return(testAlerts, nil)
+
+		config.Args = append(config.Args, appID)
+		err := RunAppListAlerts(config)
+		require.NoError(t, err)
+	})
+}
+
+func TestRunAppsUpdateAlertDestinations(t *testing.T) {
+	withTestClient(t, func(config *CmdConfig, tm *tcMocks) {
+		destinationsFile, err := os.CreateTemp(t.TempDir(), "dest")
+		require.NoError(t, err)
+		defer destinationsFile.Close()
+
+		err = json.NewEncoder(destinationsFile).Encode(&testAlertUpdate)
+		require.NoError(t, err)
+		appID := uuid.New().String()
+		tm.apps.EXPECT().UpdateAlertDestinations(appID, testAlert.ID, &testAlertUpdate).Times(1).Return(&testAlert, nil)
+
+		config.Args = append(config.Args, appID, testAlert.ID)
+		config.Doit.Set(config.NS, doctl.ArgAppAlertDestinations, destinationsFile.Name())
+		err = RunAppUpdateAlertDestinations(config)
+		require.NoError(t, err)
+	})
+}
+
+func TestRunAppsListBuildpacks(t *testing.T) {
+	withTestClient(t, func(config *CmdConfig, tm *tcMocks) {
+		tm.apps.EXPECT().ListBuildpacks().Times(1).Return([]*godo.Buildpack{testBuildpack}, nil)
+
+		err := RunAppListBuildpacks(config)
+		require.NoError(t, err)
+	})
+}
+
+func TestRunAppsUpgradeBuildpack(t *testing.T) {
+	deployment := &godo.Deployment{
+		ID:        uuid.New().String(),
+		Spec:      &testAppSpec,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	withTestClient(t, func(config *CmdConfig, tm *tcMocks) {
+		appID := uuid.New().String()
+		tm.apps.EXPECT().UpgradeBuildpack(appID, godo.UpgradeBuildpackOptions{
+			BuildpackID:       "buildpack-id",
+			MajorVersion:      3,
+			TriggerDeployment: true,
+		}).Times(1).Return([]string{"www", "api"}, deployment, nil)
+
+		config.Args = append(config.Args, appID)
+		config.Doit.Set(config.NS, doctl.ArgBuildpack, "buildpack-id")
+		config.Doit.Set(config.NS, doctl.ArgMajorVersion, 3)
+		config.Doit.Set(config.NS, doctl.ArgTriggerDeployment, true)
+		err := RunAppUpgradeBuildpack(config)
 		require.NoError(t, err)
 	})
 }

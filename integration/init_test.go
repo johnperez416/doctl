@@ -2,7 +2,6 @@ package integration
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
@@ -21,16 +20,20 @@ var (
 	builtBinaryPath string
 )
 
+const (
+	confirmNonInteractiveOutput = "Warning: Requires confirmation. Use the `--force` flag to continue without confirmation.\nError: Operation aborted."
+)
+
 func TestRun(t *testing.T) {
 	suite.Run(t)
 }
 
 func TestMain(m *testing.M) {
-	tmpDir, err := ioutil.TempDir("", "integration-doctl")
+	tmpDir, err := os.MkdirTemp("", "integration-doctl")
 	if err != nil {
 		panic("failed to create temp dir")
 	}
-	defer os.RemoveAll(tmpDir) // yes, this is best effort only
+	defer os.RemoveAll(tmpDir) // yes, this is the best effort only
 
 	builtBinaryPath = filepath.Join(tmpDir, path.Base(packagePath))
 	if runtime.GOOS == "windows" {
@@ -52,7 +55,7 @@ func TestMain(m *testing.M) {
 
 	var contents []byte
 	if _, err := os.Stat(location); !os.IsNotExist(err) {
-		contents, err = ioutil.ReadFile(location)
+		contents, err = os.ReadFile(location)
 		if err != nil {
 			panic("failed to copy config")
 		}
@@ -66,7 +69,7 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 
 	if len(contents) != 0 {
-		err = ioutil.WriteFile(location, contents, 0644)
+		err = os.WriteFile(location, contents, 0644)
 		if err != nil {
 			panic("failed to restore contents of config")
 		}

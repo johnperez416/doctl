@@ -47,16 +47,17 @@ func (i *BillingHistory) ColMap() map[string]string {
 	}
 }
 
-func (i *BillingHistory) KV() []map[string]interface{} {
+func (i *BillingHistory) KV() []map[string]any {
 	fromStringP := func(s *string) string {
 		if s == nil {
 			return ""
 		}
 		return *s
 	}
-	out := []map[string]interface{}{}
-	for _, ii := range i.BillingHistory.BillingHistory.BillingHistory {
-		x := map[string]interface{}{
+	history := i.BillingHistory.BillingHistory.BillingHistory
+	out := make([]map[string]any, 0, len(history))
+	for _, ii := range history {
+		x := map[string]any{
 			"Date":        ii.Date.Format(time.RFC3339),
 			"Type":        ii.Type,
 			"Description": ii.Description,

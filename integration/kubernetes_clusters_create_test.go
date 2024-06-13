@@ -2,7 +2,7 @@ package integration
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -44,7 +44,7 @@ var _ = suite("kubernetes/clusters/create", func(t *testing.T, when spec.G, it s
 					w.WriteHeader(http.StatusMethodNotAllowed)
 					return
 				}
-				reqBody, err := ioutil.ReadAll(req.Body)
+				reqBody, err := io.ReadAll(req.Body)
 				expect.NoError(err)
 
 				matchedRequest := kubeClustersCreateJSONReq
@@ -89,12 +89,11 @@ var _ = suite("kubernetes/clusters/create", func(t *testing.T, when spec.G, it s
 
 	when("not using node-pool", func() {
 		it("creates a kube cluster with defaults", func() {
-			f, err := ioutil.TempFile("", "fake-kube-config")
+			f, err := os.CreateTemp(t.TempDir(), "fake-kube-config")
 			expect.NoError(err)
 
 			err = f.Close()
 			expect.NoError(err)
-			defer os.Remove(f.Name())
 
 			cmd := exec.Command(builtBinaryPath,
 				"-t", "some-magic-token",
@@ -106,6 +105,7 @@ var _ = suite("kubernetes/clusters/create", func(t *testing.T, when spec.G, it s
 				"--region", "mars",
 				"--version", "some-kube-version",
 				"--1-clicks", "slug1",
+				"--ha",
 			)
 
 			cmd.Env = append(os.Environ(),
@@ -120,12 +120,11 @@ var _ = suite("kubernetes/clusters/create", func(t *testing.T, when spec.G, it s
 
 	when("using node-pool", func() {
 		it("creates a kube cluster with the node-pool", func() {
-			f, err := ioutil.TempFile("", "fake-kube-config")
+			f, err := os.CreateTemp(t.TempDir(), "fake-kube-config")
 			expect.NoError(err)
 
 			err = f.Close()
 			expect.NoError(err)
-			defer os.Remove(f.Name())
 
 			cmd := exec.Command(builtBinaryPath,
 				"-t", "some-magic-token",
@@ -137,6 +136,7 @@ var _ = suite("kubernetes/clusters/create", func(t *testing.T, when spec.G, it s
 				"--region", "mars",
 				"--version", "some-kube-version",
 				"--node-pool", "name=default;auto-scale=true;min-nodes=2;max-nodes=5;count=2",
+				"--ha",
 			)
 
 			cmd.Env = append(os.Environ(),
@@ -149,12 +149,11 @@ var _ = suite("kubernetes/clusters/create", func(t *testing.T, when spec.G, it s
 
 		when("specifying size as well", func() {
 			it("returns an error", func() {
-				f, err := ioutil.TempFile("", "fake-kube-config")
+				f, err := os.CreateTemp(t.TempDir(), "fake-kube-config")
 				expect.NoError(err)
 
 				err = f.Close()
 				expect.NoError(err)
-				defer os.Remove(f.Name())
 
 				cmd := exec.Command(builtBinaryPath,
 					"-t", "some-magic-token",
@@ -226,6 +225,7 @@ some-cluster-id    some-cluster-name    mars      some-kube-version    false    
   "version": "some-kube-version",
   "auto_upgrade": false,
   "surge_upgrade": true,
+  "ha": true,
   "maintenance_policy": {
     "day": "any",
     "duration": "",
@@ -247,6 +247,7 @@ some-cluster-id    some-cluster-name    mars      some-kube-version    false    
   "version": "some-kube-version",
   "auto_upgrade": false,
   "surge_upgrade": true,
+  "ha": true,
   "maintenance_policy": {
     "day": "any",
     "duration": "",

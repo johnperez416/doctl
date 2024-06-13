@@ -14,10 +14,13 @@ limitations under the License.
 package commands
 
 import (
+	_ "embed"
 	"fmt"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/digitalocean/doctl"
 	"github.com/digitalocean/doctl/commands/displayers"
@@ -26,86 +29,99 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	//go:embed forwarding_detail.txt
+	forwardingDetail string
+
+	//go:embed lb_detail.txt
+	lbDetail string
+)
+
 // LoadBalancer creates the load balancer command.
 func LoadBalancer() *Command {
 	cmd := &Command{
 		Command: &cobra.Command{
-			Use:   "load-balancer",
-			Short: "Display commands to manage load balancers",
+			Use:     "load-balancer",
+			Short:   "Display commands to manage load balancers",
+			Aliases: []string{"lb"},
 			Long: `The sub-commands of ` + "`" + `doctl compute load-balancer` + "`" + ` manage your load balancers.
 
 With the load-balancer command, you can list, create, or delete load balancers, and manage their configuration details.`,
 		},
 	}
-	lbDetail := `
 
-- The load balancer's ID
-- The load balancer's name
-- The load balancer's IP address
-- The load balancer's traffic algorithm. Must
-  be either ` + "`" + `round_robin` + "`" + ` or ` + "`" + `least_connections` + "`" + `
-- The current state of the load balancer. This can be ` + "`" + `new` + "`" + `, ` + "`" + `active` + "`" + `, or ` + "`" + `errored` + "`" + `.
-- The load balancer's creation date, in ISO8601 combined date and time format.
-- The load balancer's forwarding rules. See ` + "`" + `doctl compute load-balancer add-forwarding-rules --help` + "`" + ` for a list.
-- The ` + "`" + `health_check` + "`" + ` settings for the load balancer.
-- The ` + "`" + `sticky_sessions` + "`" + ` settings for the load balancer.
-- The datacenter region the load balancer is located in.
-- The Droplet tag corresponding to the Droplets assigned to the load balancer.
-- The IDs of the Droplets assigned to the load balancer.
-- Whether HTTP request to the load balancer on port 80 will be redirected to HTTPS on port 443.
-- Whether the PROXY protocol is in use on the load balancer.
-`
-	forwardingDetail := `
-
-- ` + "`" + `entry_protocol` + "`" + `: The entry protocol used for traffic to the load balancer. Possible values are: ` + "`" + `http` + "`" + `, ` + "`" + `https` + "`" + `, ` + "`" + `http2` + "`" + `, or ` + "`" + `tcp` + "`" + `.
-- ` + "`" + `entry_port` + "`" + `: The entry port used for incoming traffic to the load balancer.
-- ` + "`" + `target_protocol` + "`" + `: The target protocol used for traffic from the load balancer to the backend Droplets. Possible values are: ` + "`" + `http` + "`" + `, ` + "`" + `https` + "`" + `, ` + "`" + `http2` + "`" + `, or ` + "`" + `tcp` + "`" + `.
-- ` + "`" + `target_port` + "`" + `: The target port used to send traffic from the load balancer to the backend Droplets.
-- ` + "`" + `certificate_id` + "`" + `: The ID of the TLS certificate used for SSL termination, if enabled. Can be obtained with ` + "`" + `doctl certificate list` + "`" + `
-- ` + "`" + `tls_passthrough` + "`" + `: Whether SSL passthrough is enabled on the load balancer.
-`
-	forwardingRulesTxt := "A comma-separated list of key-value pairs representing forwarding rules, which define how traffic is routed, e.g.: `entry_protocol:tcp, entry_port:3306, target_protocol:tcp, target_port:3306`. Use a quoted string of space-separated values for multiple rules"
-	CmdBuilder(cmd, RunLoadBalancerGet, "get <id>", "Retrieve a load balancer", "Use this command to retrieve information about a load balancer instance, including:"+lbDetail, Writer,
+	forwardingRulesTxt := "A comma-separated list of key-value pairs representing forwarding rules, which define how traffic is routed, e.g.: `entry_protocol:tcp,entry_port:3306,target_protocol:tcp,target_port:3306`."
+	CmdBuilder(cmd, RunLoadBalancerGet, "get <id>", "Retrieve a load balancer", "Use this command to retrieve information about a load balancer instance, including:\n\n"+lbDetail, Writer,
 		aliasOpt("g"), displayerType(&displayers.LoadBalancer{}))
 
-	cmdRecordCreate := CmdBuilder(cmd, RunLoadBalancerCreate, "create",
-		"Create a new load balancer", "Use this command to create a new load balancer on your account. Valid forwarding rules are:"+forwardingDetail, Writer, aliasOpt("c"))
-	AddStringFlag(cmdRecordCreate, doctl.ArgLoadBalancerName, "", "",
+	cmdLoadBalancerCreate := CmdBuilder(cmd, RunLoadBalancerCreate, "create",
+		"Create a new load balancer", "Use this command to create a new load balancer on your account. Valid forwarding rules are:\n"+forwardingDetail, Writer, aliasOpt("c"))
+	AddStringFlag(cmdLoadBalancerCreate, doctl.ArgLoadBalancerName, "", "",
 		"The load balancer's name", requiredOpt())
-	AddStringFlag(cmdRecordCreate, doctl.ArgRegionSlug, "", "",
-		"The load balancer's region, e.g.: `nyc1`", requiredOpt())
-	AddStringFlag(cmdRecordCreate, doctl.ArgSizeSlug, "", "lb-small",
-		"The load balancer's size, e.g.: `lb-small`", requiredOpt())
-	AddStringFlag(cmdRecordCreate, doctl.ArgVPCUUID, "", "", "The UUID of the VPC to create the load balancer in")
-	AddStringFlag(cmdRecordCreate, doctl.ArgLoadBalancerAlgorithm, "",
-		"round_robin", "The algorithm to use when traffic is distributed across your Droplets; possible values: `round_robin` or `least_connections`")
-	AddBoolFlag(cmdRecordCreate, doctl.ArgRedirectHTTPToHTTPS, "", false,
+	AddStringFlag(cmdLoadBalancerCreate, doctl.ArgRegionSlug, "", "",
+		"The load balancer's region, e.g.: `nyc1`")
+	AddStringFlag(cmdLoadBalancerCreate, doctl.ArgSizeSlug, "", "",
+		fmt.Sprintf("The load balancer's size, e.g.: `lb-small`. Only one of %s and %s should be used", doctl.ArgSizeSlug, doctl.ArgSizeUnit))
+	AddIntFlag(cmdLoadBalancerCreate, doctl.ArgSizeUnit, "", 0,
+		fmt.Sprintf("The load balancer's size, e.g.: 1. Only one of %s and %s should be used", doctl.ArgSizeUnit, doctl.ArgSizeSlug))
+	AddStringFlag(cmdLoadBalancerCreate, doctl.ArgLoadBalancerType, "", "", "The type of load balancer, e.g.: `REGIONAL` or `GLOBAL`")
+	AddStringFlag(cmdLoadBalancerCreate, doctl.ArgVPCUUID, "", "", "The UUID of the VPC to create the load balancer in")
+	AddStringFlag(cmdLoadBalancerCreate, doctl.ArgLoadBalancerAlgorithm, "",
+		"round_robin", "This field has been deprecated. You can no longer specify an algorithm for load balancers.")
+	AddBoolFlag(cmdLoadBalancerCreate, doctl.ArgRedirectHTTPToHTTPS, "", false,
 		"Redirects HTTP requests to the load balancer on port 80 to HTTPS on port 443")
-	AddBoolFlag(cmdRecordCreate, doctl.ArgEnableProxyProtocol, "", false,
+	AddBoolFlag(cmdLoadBalancerCreate, doctl.ArgEnableProxyProtocol, "", false,
 		"enable proxy protocol")
-	AddBoolFlag(cmdRecordCreate, doctl.ArgEnableBackendKeepalive, "", false,
+	AddBoolFlag(cmdLoadBalancerCreate, doctl.ArgEnableBackendKeepalive, "", false,
 		"enable keepalive connections to backend target droplets")
-	AddStringFlag(cmdRecordCreate, doctl.ArgTagName, "", "", "droplet tag name")
-	AddStringSliceFlag(cmdRecordCreate, doctl.ArgDropletIDs, "", []string{},
+	AddBoolFlag(cmdLoadBalancerCreate, doctl.ArgDisableLetsEncryptDNSRecords, "", false,
+		"disable automatic DNS record creation for Let's Encrypt certificates that are added to the load balancer")
+	AddStringFlag(cmdLoadBalancerCreate, doctl.ArgTagName, "", "", "The name of a tag. All Droplets with this tag applied will be assigned to the load balancer.")
+	AddStringSliceFlag(cmdLoadBalancerCreate, doctl.ArgDropletIDs, "", []string{},
 		"A comma-separated list of Droplet IDs to add to the load balancer, e.g.: `12,33`")
-	AddStringFlag(cmdRecordCreate, doctl.ArgStickySessions, "", "",
+	AddStringFlag(cmdLoadBalancerCreate, doctl.ArgStickySessions, "", "",
 		"A comma-separated list of key-value pairs representing a list of active sessions, e.g.: `type:cookies, cookie_name:DO-LB, cookie_ttl_seconds:5`")
-	AddStringFlag(cmdRecordCreate, doctl.ArgHealthCheck, "", "",
-		"A comma-separated list of key-value pairs representing recent health check results, e.g.: `protocol:http, port:80, path:/index.html, check_interval_seconds:10, response_timeout_seconds:5, healthy_threshold:5, unhealthy_threshold:3`")
-	AddStringFlag(cmdRecordCreate, doctl.ArgForwardingRules, "", "",
+	AddStringFlag(cmdLoadBalancerCreate, doctl.ArgHealthCheck, "", "",
+		"A comma-separated list of key-value pairs representing recent health check results, e.g.: `protocol:http,port:80,path:/index.html,check_interval_seconds:10,response_timeout_seconds:5,healthy_threshold:5,unhealthy_threshold:3`")
+	AddStringFlag(cmdLoadBalancerCreate, doctl.ArgForwardingRules, "", "",
 		forwardingRulesTxt)
+	AddBoolFlag(cmdLoadBalancerCreate, doctl.ArgCommandWait, "", false, "Boolean that specifies whether to wait for a load balancer to complete before returning control to the terminal")
+	AddStringFlag(cmdLoadBalancerCreate, doctl.ArgProjectID, "", "", "Indicates which project to associate the Load Balancer with. If not specified, the Load Balancer will be placed in your default project.")
+	AddIntFlag(cmdLoadBalancerCreate, doctl.ArgHTTPIdleTimeoutSeconds, "", 0, "HTTP idle timeout that configures the idle timeout for http connections on the load balancer")
+	AddStringSliceFlag(cmdLoadBalancerCreate, doctl.ArgAllowList, "", []string{},
+		"A comma-separated list of ALLOW rules for the load balancer, e.g.: `ip:1.2.3.4,cidr:1.2.0.0/16`")
+	AddStringSliceFlag(cmdLoadBalancerCreate, doctl.ArgDenyList, "", []string{},
+		"A comma-separated list of DENY rules for the load balancer, e.g.: `ip:1.2.3.4,cidr:1.2.0.0/16`")
+	AddStringSliceFlag(cmdLoadBalancerCreate, doctl.ArgLoadBalancerDomains, "", []string{},
+		"A comma-separated list of domains required to ingress traffic to a global load balancer, e.g.: `name:test-domain-1 is_managed:true certificate_id:test-cert-id-1` "+
+			"(NOTE: this is a closed beta feature, contact DigitalOcean support to review its public availability.)")
+	AddStringFlag(cmdLoadBalancerCreate, doctl.ArgGlobalLoadBalancerSettings, "", "",
+		"Target protocol and port settings for ingressing traffic to a global load balancer, e.g.: `target_protocol:http,target_port:80` "+
+			"(NOTE: this is a closed beta feature, contact DigitalOcean support to review its public availability.)")
+	AddStringFlag(cmdLoadBalancerCreate, doctl.ArgGlobalLoadBalancerCDNSettings, "", "",
+		"CDN cache settings global load balancer, e.g.: `is_enabled:true` "+
+			"(NOTE: this is a closed beta feature, contact DigitalOcean support to review its public availability.)")
+	AddStringSliceFlag(cmdLoadBalancerCreate, doctl.ArgTargetLoadBalancerIDs, "", []string{},
+		"A comma-separated list of Load Balancer IDs to add as target to the global load balancer "+
+			"(NOTE: this is a closed beta feature, contact DigitalOcean support to review its public availability.)")
+	AddStringFlag(cmdLoadBalancerCreate, doctl.ArgLoadBalancerNetwork, "", "", "The type of network the load balancer is accessible from, e.g.: `EXTERNAL` or `INTERNAL`"+
+		"(NOTE: this is a closed beta feature, contact DigitalOcean support to review its public availability.)")
+	cmdLoadBalancerCreate.Flags().MarkHidden(doctl.ArgLoadBalancerType)
+	cmdLoadBalancerCreate.Flags().MarkHidden(doctl.ArgLoadBalancerNetwork)
 
 	cmdRecordUpdate := CmdBuilder(cmd, RunLoadBalancerUpdate, "update <id>",
-		"Update a load balancer's configuration", `Use this command to update the configuration of a specified load balancer.`, Writer, aliasOpt("u"))
+		"Update a load balancer's configuration", `Use this command to update the configuration of a specified load balancer. Using all applicable flags, the command should contain a full representation of the load balancer including existing attributes, such as the load balancer's name, region, forwarding rules, and Droplet IDs. Any attribute that is not provided is reset to its default value.`, Writer, aliasOpt("u"))
 	AddStringFlag(cmdRecordUpdate, doctl.ArgLoadBalancerName, "", "",
-		"The load balancer's name", requiredOpt())
+		"The load balancer's name")
 	AddStringFlag(cmdRecordUpdate, doctl.ArgRegionSlug, "", "",
-		"The load balancer's region, e.g.: `nyc1`", requiredOpt())
+		"The load balancer's region, e.g.: `nyc1`")
 	AddStringFlag(cmdRecordUpdate, doctl.ArgSizeSlug, "", "",
-		"The load balancer's size, e.g.: `lb-small`", requiredOpt())
+		fmt.Sprintf("The load balancer's size, e.g.: `lb-small`. Only one of %s and %s should be used", doctl.ArgSizeSlug, doctl.ArgSizeUnit))
+	AddIntFlag(cmdRecordUpdate, doctl.ArgSizeUnit, "", 0,
+		fmt.Sprintf("The load balancer's size, e.g.: 1. Only one of %s and %s should be used", doctl.ArgSizeUnit, doctl.ArgSizeSlug))
 	AddStringFlag(cmdRecordUpdate, doctl.ArgVPCUUID, "", "", "The UUID of the VPC to create the load balancer in")
 	AddStringFlag(cmdRecordUpdate, doctl.ArgLoadBalancerAlgorithm, "",
-		"round_robin", "The algorithm to use when traffic is distributed across your Droplets; possible values: `round_robin` or `least_connections`")
+		"round_robin", "This field has been deprecated. You can no longer specify an algorithm for load balancers.")
 	AddBoolFlag(cmdRecordUpdate, doctl.ArgRedirectHTTPToHTTPS, "", false,
 		"Flag to redirect HTTP requests to the load balancer on port 80 to HTTPS on port 443")
 	AddBoolFlag(cmdRecordUpdate, doctl.ArgEnableProxyProtocol, "", false,
@@ -120,12 +136,32 @@ With the load-balancer command, you can list, create, or delete load balancers, 
 	AddStringFlag(cmdRecordUpdate, doctl.ArgHealthCheck, "", "",
 		"A comma-separated list of key-value pairs representing recent health check results, e.g.: `protocol:http, port:80, path:/index.html, check_interval_seconds:10, response_timeout_seconds:5, healthy_threshold:5, unhealthy_threshold:3`")
 	AddStringFlag(cmdRecordUpdate, doctl.ArgForwardingRules, "", "", forwardingRulesTxt)
+	AddBoolFlag(cmdRecordUpdate, doctl.ArgDisableLetsEncryptDNSRecords, "", false,
+		"disable automatic DNS record creation for Let's Encrypt certificates that are added to the load balancer")
+	AddStringFlag(cmdRecordUpdate, doctl.ArgProjectID, "", "",
+		"Indicates which project to associate the Load Balancer with. If not specified, the Load Balancer will be placed in your default project.")
+	AddStringSliceFlag(cmdRecordUpdate, doctl.ArgAllowList, "", nil,
+		"A comma-separated list of ALLOW rules for the load balancer, e.g.: `ip:1.2.3.4,cidr:1.2.0.0/16`")
+	AddStringSliceFlag(cmdRecordUpdate, doctl.ArgDenyList, "", nil,
+		"A comma-separated list of DENY rules for the load balancer, e.g.: `ip:1.2.3.4,cidr:1.2.0.0/16`")
+	AddStringSliceFlag(cmdRecordUpdate, doctl.ArgLoadBalancerDomains, "", []string{},
+		"A comma-separated list of domains required to ingress traffic to a global load balancer, e.g.: `name:test-domain-1 is_managed:true certificate_id:test-cert-id-1` "+
+			"(NOTE: this is a closed beta feature, contact DigitalOcean support to review its public availability.)")
+	AddStringFlag(cmdRecordUpdate, doctl.ArgGlobalLoadBalancerSettings, "", "",
+		"Target protocol and port settings for ingressing traffic to a global load balancer, e.g.: `target_protocol:http,target_port:80` "+
+			"(NOTE: this is a closed beta feature, contact DigitalOcean support to review its public availability.)")
+	AddStringFlag(cmdRecordUpdate, doctl.ArgGlobalLoadBalancerCDNSettings, "", "",
+		"CDN cache settings global load balancer, e.g.: `is_enabled:true` "+
+			"(NOTE: this is a closed beta feature, contact DigitalOcean support to review its public availability.)")
+	AddStringSliceFlag(cmdRecordUpdate, doctl.ArgTargetLoadBalancerIDs, "", []string{},
+		"A comma-separated list of Load Balancer IDs to add as target to the global load balancer "+
+			"(NOTE: this is a closed beta feature, contact DigitalOcean support to review its public availability.)")
 
-	CmdBuilder(cmd, RunLoadBalancerList, "list", "List load balancers", "Use this command to get a list of the load balancers on your account, including the following information for each:"+lbDetail, Writer,
+	CmdBuilder(cmd, RunLoadBalancerList, "list", "List load balancers", "Use this command to get a list of the load balancers on your account, including the following information for each:\n\n"+lbDetail, Writer,
 		aliasOpt("ls"), displayerType(&displayers.LoadBalancer{}))
 
 	cmdRunRecordDelete := CmdBuilder(cmd, RunLoadBalancerDelete, "delete <id>",
-		"Permanently delete a load balancer", `Use this command to permanently delete the speicified load balancer. This is irreversable.`, Writer, aliasOpt("d", "rm"))
+		"Permanently delete a load balancer", `Use this command to permanently delete the specified load balancer. This is irreversible.`, Writer, aliasOpt("d", "rm"))
 	AddBoolFlag(cmdRunRecordDelete, doctl.ArgForce, doctl.ArgShortForce, false,
 		"Delete the load balancer without a confirmation prompt")
 
@@ -140,12 +176,18 @@ With the load-balancer command, you can list, create, or delete load balancers, 
 		"A comma-separated list of IDs of Droplets to remove from the load balancer, example value: `12,33`")
 
 	cmdAddForwardingRules := CmdBuilder(cmd, RunLoadBalancerAddForwardingRules,
-		"add-forwarding-rules <id>", "Add forwarding rules to a load balancer", "Use this command to add forwarding rules to a load balancer, specified with the `--forwarding-rules` flag. Valid rules include:"+forwardingDetail, Writer)
+		"add-forwarding-rules <id>", "Add forwarding rules to a load balancer", "Use this command to add forwarding rules to a load balancer, specified with the `--forwarding-rules` flag. Valid rules include:\n"+forwardingDetail, Writer)
 	AddStringFlag(cmdAddForwardingRules, doctl.ArgForwardingRules, "", "", forwardingRulesTxt)
 
 	cmdRemoveForwardingRules := CmdBuilder(cmd, RunLoadBalancerRemoveForwardingRules,
-		"remove-forwarding-rules <id>", "Remove forwarding rules from a load balancer", "Use this command to remove forwarding rules from a load balancer, specified with the `--forwarding-rules` flag. Valid rules include:"+forwardingDetail, Writer)
+		"remove-forwarding-rules <id>", "Remove forwarding rules from a load balancer", "Use this command to remove forwarding rules from a load balancer, specified with the `--forwarding-rules` flag. Valid rules include:\n"+forwardingDetail, Writer)
 	AddStringFlag(cmdRemoveForwardingRules, doctl.ArgForwardingRules, "", "", forwardingRulesTxt)
+
+	cmdRunCachePurge := CmdBuilder(cmd, RunLoadBalancerPurgeCache, "purge-cache <id>",
+		"Purges CDN cache for a global load balancer", `Use this command to purge the CDN cache for specified global load balancer.`, Writer)
+	AddBoolFlag(cmdRunCachePurge, doctl.ArgForce, doctl.ArgShortForce, false,
+		"Purge the global load balancer CDN cache without a confirmation prompt "+
+			"(NOTE: this is a closed beta feature, contact DigitalOcean support to review its public availability.)")
 
 	return cmd
 }
@@ -193,6 +235,28 @@ func RunLoadBalancerCreate(c *CmdConfig) error {
 		return err
 	}
 
+	wait, err := c.Doit.GetBool(c.NS, doctl.ArgCommandWait)
+	if err != nil {
+		return err
+	}
+
+	if wait {
+		lbs := c.LoadBalancers()
+		notice("Load balancer creation is in progress, waiting for load balancer to become active")
+
+		err := waitForActiveLoadBalancer(lbs, lb.ID)
+		if err != nil {
+			return fmt.Errorf(
+				"load balancer couldn't enter `active` state: %v",
+				err,
+			)
+		}
+
+		lb, _ = lbs.Get(lb.ID)
+	}
+
+	notice("Load balancer created")
+
 	item := &displayers.LoadBalancer{LoadBalancers: do.LoadBalancers{*lb}}
 	return c.Display(item)
 }
@@ -238,7 +302,7 @@ func RunLoadBalancerDelete(c *CmdConfig) error {
 			return err
 		}
 	} else {
-		return fmt.Errorf("Operation aborted.")
+		return errOperationAborted
 	}
 
 	return nil
@@ -328,6 +392,31 @@ func RunLoadBalancerRemoveForwardingRules(c *CmdConfig) error {
 	return c.LoadBalancers().RemoveForwardingRules(lbID, forwardingRules...)
 }
 
+// RunLoadBalancerPurgeCache purges cache for a global load balancer by its identifier.
+func RunLoadBalancerPurgeCache(c *CmdConfig) error {
+	err := ensureOneArg(c)
+	if err != nil {
+		return err
+	}
+	lbID := c.Args[0]
+
+	force, err := c.Doit.GetBool(c.NS, doctl.ArgForce)
+	if err != nil {
+		return err
+	}
+
+	if force || AskForConfirm("purge CDN cache for global load balancer") == nil {
+		lbs := c.LoadBalancers()
+		if err := lbs.PurgeCache(lbID); err != nil {
+			return err
+		}
+	} else {
+		return errOperationAborted
+	}
+
+	return nil
+}
+
 func extractForwardingRules(s string) (forwardingRules []godo.ForwardingRule, err error) {
 	if len(s) == 0 {
 		return forwardingRules, err
@@ -337,7 +426,7 @@ func extractForwardingRules(s string) (forwardingRules []godo.ForwardingRule, er
 
 	for _, v := range list {
 		forwardingRule := new(godo.ForwardingRule)
-		if err := fillStructFromStringSliceArgs(forwardingRule, v); err != nil {
+		if err := fillStructFromStringSliceArgs(forwardingRule, v, ","); err != nil {
 			return nil, err
 		}
 
@@ -347,12 +436,29 @@ func extractForwardingRules(s string) (forwardingRules []godo.ForwardingRule, er
 	return forwardingRules, err
 }
 
-func fillStructFromStringSliceArgs(obj interface{}, s string) error {
+func extractDomains(s []string) (domains []*godo.LBDomain, err error) {
+	if len(s) == 0 {
+		return domains, err
+	}
+
+	for _, v := range s {
+		domain := new(godo.LBDomain)
+		if err := fillStructFromStringSliceArgs(domain, v, " "); err != nil {
+			return nil, err
+		}
+
+		domains = append(domains, domain)
+	}
+
+	return domains, err
+}
+
+func fillStructFromStringSliceArgs(obj any, s string, delimiter string) error {
 	if len(s) == 0 {
 		return nil
 	}
 
-	kvs := strings.Split(s, ",")
+	kvs := strings.Split(s, delimiter)
 	m := map[string]string{}
 
 	for _, v := range kvs {
@@ -381,8 +487,24 @@ func fillStructFromStringSliceArgs(obj interface{}, s string) error {
 				if v, err := strconv.Atoi(val); err == nil {
 					f.Set(reflect.ValueOf(v))
 				}
+			case reflect.Uint32:
+				if v64, err := strconv.ParseUint(val, 10, 32); err == nil {
+					f.Set(reflect.ValueOf(uint32(v64)))
+				}
 			case reflect.String:
 				f.Set(reflect.ValueOf(val))
+			case reflect.Map:
+				for _, kvPair := range strings.Split(val, " ") {
+					kv := strings.Split(kvPair, "=")
+					if len(kv) == 2 {
+						if v32, err := strconv.ParseUint(kv[1], 10, 32); err == nil {
+							if f.IsZero() {
+								f.Set(reflect.MakeMap(f.Type()))
+							}
+							f.SetMapIndex(reflect.ValueOf(kv[0]), reflect.ValueOf(uint32(v32)))
+						}
+					}
+				}
 			default:
 				return fmt.Errorf("Unexpected type for struct field %v", val)
 			}
@@ -410,6 +532,18 @@ func buildRequestFromArgs(c *CmdConfig, r *godo.LoadBalancerRequest) error {
 		return err
 	}
 	r.SizeSlug = size
+
+	sizeUnit, err := c.Doit.GetInt(c.NS, doctl.ArgSizeUnit)
+	if err != nil {
+		return err
+	}
+	r.SizeUnit = uint32(sizeUnit)
+
+	lbType, err := c.Doit.GetString(c.NS, doctl.ArgLoadBalancerType)
+	if err != nil {
+		return err
+	}
+	r.Type = strings.ToUpper(lbType)
 
 	algorithm, err := c.Doit.GetString(c.NS, doctl.ArgLoadBalancerAlgorithm)
 	if err != nil {
@@ -447,6 +581,12 @@ func buildRequestFromArgs(c *CmdConfig, r *godo.LoadBalancerRequest) error {
 	}
 	r.EnableBackendKeepalive = enableBackendKeepalive
 
+	disableLetsEncryptDNSRecords, err := c.Doit.GetBool(c.NS, doctl.ArgDisableLetsEncryptDNSRecords)
+	if err != nil {
+		return err
+	}
+	r.DisableLetsEncryptDNSRecords = &disableLetsEncryptDNSRecords
+
 	dropletIDsList, err := c.Doit.GetStringSlice(c.NS, doctl.ArgDropletIDs)
 	if err != nil {
 		return err
@@ -464,7 +604,7 @@ func buildRequestFromArgs(c *CmdConfig, r *godo.LoadBalancerRequest) error {
 	}
 
 	stickySession := new(godo.StickySessions)
-	if err := fillStructFromStringSliceArgs(stickySession, ssa); err != nil {
+	if err := fillStructFromStringSliceArgs(stickySession, ssa, ","); err != nil {
 		return err
 	}
 	r.StickySessions = stickySession
@@ -475,7 +615,7 @@ func buildRequestFromArgs(c *CmdConfig, r *godo.LoadBalancerRequest) error {
 	}
 
 	healthCheck := new(godo.HealthCheck)
-	if err := fillStructFromStringSliceArgs(healthCheck, hca); err != nil {
+	if err := fillStructFromStringSliceArgs(healthCheck, hca, ","); err != nil {
 		return err
 	}
 	r.HealthCheck = healthCheck
@@ -491,5 +631,130 @@ func buildRequestFromArgs(c *CmdConfig, r *godo.LoadBalancerRequest) error {
 	}
 	r.ForwardingRules = forwardingRules
 
+	projectID, err := c.Doit.GetString(c.NS, doctl.ArgProjectID)
+	if err != nil {
+		return err
+	}
+
+	r.ProjectID = projectID
+
+	httpIdleTimeout, err := c.Doit.GetInt(c.NS, doctl.ArgHTTPIdleTimeoutSeconds)
+	if err != nil {
+		return err
+	}
+
+	if httpIdleTimeout != 0 {
+		t := uint64(httpIdleTimeout)
+		r.HTTPIdleTimeoutSeconds = &t
+	}
+
+	allowRules, allowflagSet, err := c.Doit.GetStringSliceIsFlagSet(c.NS, doctl.ArgAllowList)
+	if err != nil {
+		return err
+	}
+
+	denyRules, denyFlagSet, err := c.Doit.GetStringSliceIsFlagSet(c.NS, doctl.ArgDenyList)
+	if err != nil {
+		return err
+	}
+
+	if allowflagSet || denyFlagSet {
+		firewall := new(godo.LBFirewall)
+		firewall.Allow = allowRules
+		firewall.Deny = denyRules
+		r.Firewall = firewall
+	}
+
+	dms, err := c.Doit.GetStringSlice(c.NS, doctl.ArgLoadBalancerDomains)
+	if err != nil {
+		return err
+	}
+
+	domains, err := extractDomains(dms)
+	if err != nil {
+		return err
+	}
+	r.Domains = domains
+
+	glbs, err := c.Doit.GetString(c.NS, doctl.ArgGlobalLoadBalancerSettings)
+	if err != nil {
+		return err
+	}
+
+	glbSettings := new(godo.GLBSettings)
+	if err := fillStructFromStringSliceArgs(glbSettings, glbs, ","); err != nil {
+		return err
+	}
+	if glbSettings.TargetProtocol != "" && glbSettings.TargetPort != 0 {
+		r.GLBSettings = glbSettings
+	}
+
+	cdns, err := c.Doit.GetString(c.NS, doctl.ArgGlobalLoadBalancerCDNSettings)
+	if err != nil {
+		return err
+	}
+
+	cdnSettings := new(godo.CDNSettings)
+	if err := fillStructFromStringSliceArgs(cdnSettings, cdns, ","); err != nil {
+		return err
+	}
+	if r.GLBSettings != nil {
+		r.GLBSettings.CDN = cdnSettings
+	}
+
+	lbIDsList, err := c.Doit.GetStringSlice(c.NS, doctl.ArgTargetLoadBalancerIDs)
+	if err != nil {
+		return err
+	}
+	r.TargetLoadBalancerIDs = lbIDsList
+
+	network, err := c.Doit.GetString(c.NS, doctl.ArgLoadBalancerNetwork)
+	if err != nil {
+		return err
+	}
+	r.Network = strings.ToUpper(network)
+
 	return nil
+}
+
+func waitForActiveLoadBalancer(lbs do.LoadBalancersService, lbID string) error {
+	const maxAttempts = 180
+	const wantStatus = "active"
+	const errStatus = "errored"
+	attempts := 0
+	printNewLineSet := false
+
+	for i := 0; i < maxAttempts; i++ {
+		if attempts != 0 {
+			fmt.Fprint(os.Stderr, ".")
+			if !printNewLineSet {
+				printNewLineSet = true
+				defer fmt.Fprintln(os.Stderr)
+			}
+		}
+
+		lb, err := lbs.Get(lbID)
+		if err != nil {
+			return err
+		}
+
+		if lb.Status == errStatus {
+			return fmt.Errorf(
+				"load balancer (%s) entered status `errored`",
+				lbID,
+			)
+		}
+
+		if lb.Status == wantStatus {
+			return nil
+		}
+
+		attempts++
+		time.Sleep(10 * time.Second)
+	}
+
+	return fmt.Errorf(
+		"timeout waiting for load balancer (%s) to become active",
+		lbID,
+	)
 }

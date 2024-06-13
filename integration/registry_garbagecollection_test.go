@@ -3,7 +3,7 @@ package integration
 import (
 	"encoding/json"
 	"html/template"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -126,7 +126,7 @@ var _ = suite("registry/garbage-collection", func(t *testing.T, when spec.G, it 
 			case "/v2/registry/" + validRegistryName + "/garbage-collection/" + validGCUUID:
 				switch req.Method {
 				case http.MethodPut:
-					reqBody, err := ioutil.ReadAll(req.Body)
+					reqBody, err := io.ReadAll(req.Body)
 					expect.NoError(err)
 
 					expectJSON := &strings.Builder{}
@@ -265,7 +265,7 @@ var _ = suite("registry/garbage-collection", func(t *testing.T, when spec.G, it 
 	})
 })
 
-func reifyTemplateStr(t *testing.T, tmplStr string, v interface{}) string {
+func reifyTemplateStr(t *testing.T, tmplStr string, v any) string {
 	tmpl, err := template.New("meow").Parse(tmplStr)
 	require.NoError(t, err)
 

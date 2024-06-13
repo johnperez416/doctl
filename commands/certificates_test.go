@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -78,7 +77,7 @@ func TestCertificatesCreate(t *testing.T) {
 		},
 
 		{
-			desc:           "creates custom cerftificate without specifying chain",
+			desc:           "creates custom certificate without specifying chain",
 			certName:       "cert-without-chain",
 			privateKeyPath: filepath.Join(os.TempDir(), "cer-key.crt"),
 			certLeafPath:   filepath.Join(os.TempDir(), "leaf-cer.crt"),
@@ -90,7 +89,7 @@ func TestCertificatesCreate(t *testing.T) {
 			},
 		},
 		{
-			desc:     "creates lets_encrypt cerftificate",
+			desc:     "creates lets_encrypt certificate",
 			certName: "lets-encrypt-cert",
 			DNSNames: []string{"sampledomain.org", "api.sampledomain.org"},
 			certType: "lets_encrypt",
@@ -106,21 +105,21 @@ func TestCertificatesCreate(t *testing.T) {
 		t.Run(test.desc, func(t *testing.T) {
 			withTestClient(t, func(config *CmdConfig, tm *tcMocks) {
 				if test.privateKeyPath != "" {
-					pkErr := ioutil.WriteFile(test.privateKeyPath, []byte("-----BEGIN PRIVATE KEY-----"), 0600)
+					pkErr := os.WriteFile(test.privateKeyPath, []byte("-----BEGIN PRIVATE KEY-----"), 0600)
 					assert.NoError(t, pkErr)
 
 					defer os.Remove(test.privateKeyPath)
 				}
 
 				if test.certLeafPath != "" {
-					certErr := ioutil.WriteFile(test.certLeafPath, []byte("-----BEGIN CERTIFICATE-----"), 0600)
+					certErr := os.WriteFile(test.certLeafPath, []byte("-----BEGIN CERTIFICATE-----"), 0600)
 					assert.NoError(t, certErr)
 
 					defer os.Remove(test.certLeafPath)
 				}
 
 				if test.certChainPath != "" {
-					certErr := ioutil.WriteFile(test.certChainPath, []byte("-----BEGIN CERTIFICATE-----"), 0600)
+					certErr := os.WriteFile(test.certChainPath, []byte("-----BEGIN CERTIFICATE-----"), 0600)
 					assert.NoError(t, certErr)
 
 					defer os.Remove(test.certChainPath)
@@ -161,6 +160,17 @@ func TestCertificateList(t *testing.T) {
 	withTestClient(t, func(config *CmdConfig, tm *tcMocks) {
 		tm.certificates.EXPECT().List().Return(testCertificateList, nil)
 
+		err := RunCertificateList(config)
+		assert.NoError(t, err)
+	})
+}
+
+func TestCertificateListByName(t *testing.T) {
+	withTestClient(t, func(config *CmdConfig, tm *tcMocks) {
+		name := "web-cert-01"
+		tm.certificates.EXPECT().ListByName(name).Return(testCertificateList, nil)
+
+		config.Doit.Set(config.NS, doctl.ArgCertificateName, name)
 		err := RunCertificateList(config)
 		assert.NoError(t, err)
 	})

@@ -20,11 +20,11 @@ import (
 
 	"github.com/digitalocean/doctl/do"
 	"github.com/digitalocean/godo"
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 )
 
-// MockBalanceService is a mock of BalanceService interface
+// MockBalanceService is a mock for BalanceService interface
 type MockBalanceService struct {
 	ctrl     *gomock.Controller
 	recorder *MockBalanceServiceMockRecorder
@@ -58,7 +58,7 @@ func (m *MockBalanceService) Get(arg0 context.Context) (*godo.Balance, *godo.Res
 }
 
 // Get indicates an expected call of Get
-func (mr *MockBalanceServiceMockRecorder) Get(arg0 interface{}) *gomock.Call {
+func (mr *MockBalanceServiceMockRecorder) Get(arg0 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockBalanceService)(nil).Get), arg0)
 }

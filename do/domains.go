@@ -57,7 +57,7 @@ type DomainRecordEditRequest struct {
 // DomainRecords is a slice of DomainRecord.
 type DomainRecords []DomainRecord
 
-// DomainsService is the godo DOmainsService interface.
+// DomainsService is the godo DomainsService interface.
 type DomainsService interface {
 	List() (Domains, error)
 	Get(string) (*Domain, error)
@@ -85,13 +85,13 @@ func NewDomainsService(client *godo.Client) DomainsService {
 }
 
 func (ds *domainsService) List() (Domains, error) {
-	f := func(opt *godo.ListOptions) ([]interface{}, *godo.Response, error) {
+	f := func(opt *godo.ListOptions) ([]any, *godo.Response, error) {
 		list, resp, err := ds.client.Domains.List(context.TODO(), opt)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		si := make([]interface{}, len(list))
+		si := make([]any, len(list))
 		for i := range list {
 			si[i] = list[i]
 		}
@@ -137,13 +137,13 @@ func (ds *domainsService) Delete(name string) error {
 }
 
 func (ds *domainsService) Records(name string) (DomainRecords, error) {
-	f := func(opt *godo.ListOptions) ([]interface{}, *godo.Response, error) {
+	f := func(opt *godo.ListOptions) ([]any, *godo.Response, error) {
 		list, resp, err := ds.client.Domains.Records(context.TODO(), name, opt)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		si := make([]interface{}, len(list))
+		si := make([]any, len(list))
 		for i := range list {
 			si[i] = list[i]
 		}
@@ -198,7 +198,7 @@ func (ds *domainsService) EditRecord(domain string, id int, drer *DomainRecordEd
 	}
 
 	path := fmt.Sprintf(domainRecordPath, domain, id)
-	req, err := ds.client.NewRequest(context.TODO(), http.MethodPut, path, drer)
+	req, err := ds.client.NewRequest(context.TODO(), http.MethodPatch, path, drer)
 	if err != nil {
 		return nil, err
 	}

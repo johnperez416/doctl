@@ -32,6 +32,7 @@ type CertificatesService interface {
 	Get(cID string) (*Certificate, error)
 	Create(cr *godo.CertificateRequest) (*Certificate, error)
 	List() (Certificates, error)
+	ListByName(cName string) (Certificates, error)
 	Delete(cID string) error
 }
 
@@ -67,13 +68,13 @@ func (cs *certificatesService) Create(cr *godo.CertificateRequest) (*Certificate
 }
 
 func (cs *certificatesService) List() (Certificates, error) {
-	f := func(opt *godo.ListOptions) ([]interface{}, *godo.Response, error) {
+	f := func(opt *godo.ListOptions) ([]any, *godo.Response, error) {
 		list, resp, err := cs.client.Certificates.List(context.TODO(), opt)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		si := make([]interface{}, len(list))
+		si := make([]any, len(list))
 		for i := range list {
 			si[i] = list[i]
 		}
@@ -93,6 +94,17 @@ func (cs *certificatesService) List() (Certificates, error) {
 	}
 
 	return list, nil
+}
+
+func (cs *certificatesService) ListByName(cName string) (Certificates, error) {
+	c, _, err := cs.client.Certificates.ListByName(context.TODO(), cName, nil)
+
+	list := make([]Certificate, len(c))
+	for i := range c {
+		list[i] = Certificate{Certificate: &c[i]}
+	}
+
+	return list, err
 }
 
 func (cs *certificatesService) Delete(cID string) error {

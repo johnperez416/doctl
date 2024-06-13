@@ -15,6 +15,7 @@ package commands
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
@@ -25,6 +26,8 @@ import (
 )
 
 var (
+	errOperationAborted = fmt.Errorf("Operation aborted.")
+
 	colorErr    = color.RedString("Error")
 	colorWarn   = color.YellowString("Warning")
 	colorNotice = color.GreenString("Notice")
@@ -33,6 +36,13 @@ var (
 	errAction = func() {
 		os.Exit(1)
 	}
+
+	// ErrExitSilently instructs doctl to exit silently with a bad status code. This can be used to fail a command
+	// without printing an error message to the screen.
+	//
+	// IMPORTANT! Make sure to print your own error message if you use this! It is important for users to know
+	// what caused the failure.
+	ErrExitSilently = fmt.Errorf("")
 )
 
 func init() {
@@ -49,6 +59,11 @@ type outputError struct {
 
 func checkErr(err error) {
 	if err == nil {
+		return
+	}
+
+	if errors.Is(err, ErrExitSilently) {
+		errAction()
 		return
 	}
 
@@ -82,13 +97,13 @@ func ensureOneArg(c *CmdConfig) error {
 	}
 }
 
-func warn(msg string, args ...interface{}) {
+func warn(msg string, args ...any) {
 	fmt.Fprintf(color.Output, "%s: %s\n", colorWarn, fmt.Sprintf(msg, args...))
 }
-func warnConfirm(msg string, args ...interface{}) {
+func warnConfirm(msg string, args ...any) {
 	fmt.Fprintf(color.Output, "%s: %s", colorWarn, fmt.Sprintf(msg, args...))
 }
 
-func notice(msg string, args ...interface{}) {
+func notice(msg string, args ...any) {
 	fmt.Fprintf(color.Output, "%s: %s\n", colorNotice, fmt.Sprintf(msg, args...))
 }

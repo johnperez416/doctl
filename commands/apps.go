@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
@@ -28,7 +27,9 @@ import (
 	"github.com/digitalocean/doctl"
 	"github.com/digitalocean/doctl/commands/displayers"
 	"github.com/digitalocean/doctl/do"
+	"github.com/digitalocean/doctl/internal/apps"
 	"github.com/digitalocean/godo"
+	multierror "github.com/hashicorp/go-multierror"
 	"github.com/spf13/cobra"
 	"sigs.k8s.io/yaml"
 )
@@ -39,10 +40,13 @@ func Apps() *Command {
 		Command: &cobra.Command{
 			Use:     "apps",
 			Aliases: []string{"app", "a"},
-			Short:   "Display commands for working with apps",
-			Long:    "The subcommands of `doctl app` manage your App Platform apps. For documentation on app specs used by multiple commands, see https://www.digitalocean.com/docs/app-platform/concepts/app-spec.",
+			Short:   "Displays commands for working with apps",
+			Long:    "The subcommands of `doctl app` manage your App Platform apps. For documentation on app specs, see the [app spec reference](https://www.digitalocean.com/docs/app-platform/concepts/app-spec).",
+			GroupID: manageResourcesGroup,
 		},
 	}
+
+	cmd.AddCommand(AppsDev())
 
 	create := CmdBuilder(
 		cmd,
@@ -55,6 +59,11 @@ func Apps() *Command {
 		displayerType(&displayers.Apps{}),
 	)
 	AddStringFlag(create, doctl.ArgAppSpec, "", "", `Path to an app spec in JSON or YAML format. Set to "-" to read from stdin.`, requiredOpt())
+	AddBoolFlag(create, doctl.ArgCommandWait, "", false,
+		"Boolean that specifies whether to wait for an app to complete before returning control to the terminal")
+	AddBoolFlag(create, doctl.ArgCommandUpsert, "", false, "Boolean that specifies whether the app should be updated if it already exists")
+	AddStringFlag(create, doctl.ArgProjectID, "", "", "The ID of the project to assign the created app and resources to. If not provided, the default project will be used.")
+	create.Example = `The following example creates an app in a project named ` + "`" + `example-project` + "`" + ` using an app spec located in a directory called ` + "`" + `/src/your-app.yaml` + "`" + `. Additionally, the command returns the new app's ID, ingress information, and creation date: doctl apps create --spec src/your-app.yaml --format ID,DefaultIngress,Created`
 
 	CmdBuilder(
 		cmd,
@@ -69,72 +78,78 @@ Only basic information is included with the text output format. For complete app
 		displayerType(&displayers.Apps{}),
 	)
 
-	CmdBuilder(
+	list := CmdBuilder(
 		cmd,
 		RunAppsList,
 		"list",
-		"List all apps",
-		`List all apps.
+		"Lists all apps",
+		`Lists all apps associated with your account, including their ID, spec name, creation date, and other information.
 
-Only basic information is included with the text output format. For complete app details including the app specs, use the JSON format.`,
+Only basic information is included with the text output format. For complete app details including an updated app spec, use the `+"`"+`--output`+"`"+` global flag and specify the JSON format.`,
 		Writer,
 		aliasOpt("ls"),
 		displayerType(&displayers.Apps{}),
 	)
+	AddBoolFlag(list, doctl.ArgAppWithProjects, "", false, "Boolean that specifies whether project ids should be fetched along with listed apps")
+	list.Example = `The following lists all apps in your account, but returns just their ID and creation date: doctl apps list --format ID,Created`
 
 	update := CmdBuilder(
 		cmd,
 		RunAppsUpdate,
 		"update <app id>",
-		"Update an app",
-		`Update the specified app with the given app spec. For more information about app specs, see https://www.digitalocean.com/docs/app-platform/concepts/app-spec`,
+		"Updates an app",
+		`Updates the specified app with the given app spec. For more information about app specs, see the [app spec reference](https://www.digitalocean.com/docs/app-platform/concepts/app-spec)`,
 		Writer,
 		aliasOpt("u"),
 		displayerType(&displayers.Apps{}),
 	)
 	AddStringFlag(update, doctl.ArgAppSpec, "", "", `Path to an app spec in JSON or YAML format. Set to "-" to read from stdin.`, requiredOpt())
+	AddBoolFlag(update, doctl.ArgCommandWait, "", false,
+		"Boolean that specifies whether to wait for an app to complete updating before allowing further terminal input. This can be helpful for scripting.")
+	update.Example = `The following example updates an app with the ID ` + "`" + `f81d4fae-7dec-11d0-a765-00a0c91e6bf6` + "`" + ` using an app spec located in a directory called ` + "`" + `/src/your-app.yaml` + "`" + `. Additionally, the command returns the updated app's ID, ingress information, and creation date: doctl apps update f81d4fae-7dec-11d0-a765-00a0c91e6bf6 --spec src/your-app.yaml --format ID,DefaultIngress,Created`
 
 	deleteApp := CmdBuilder(
 		cmd,
 		RunAppsDelete,
 		"delete <app id>",
 		"Deletes an app",
-		`Deletes an app with the provided id.
+		`Deletes the specified app.
 
-This permanently deletes the app and all its associated deployments.`,
+This permanently deletes the app and all of its associated deployments.`,
 		Writer,
-		aliasOpt("d"),
+		aliasOpt("d", "rm"),
 	)
 	AddBoolFlag(deleteApp, doctl.ArgForce, doctl.ArgShortForce, false, "Delete the App without a confirmation prompt")
+	deleteApp.Example = `The following example deletes an app with the ID ` + "`" + `f81d4fae-7dec-11d0-a765-00a0c91e6bf6` + "`" + `: doctl apps delete f81d4fae-7dec-11d0-a765-00a0c91e6bf6`
 
 	deploymentCreate := CmdBuilder(
 		cmd,
 		RunAppsCreateDeployment,
 		"create-deployment <app id>",
-		"Create a deployment",
-		`Create a deployment for an app.
-
-Creating an app deployment will pull the latest changes from your repository and schedule a new deployment for your app.`,
+		"Creates a deployment",
+		`Deploys the app with the latest changes from your repository.`,
 		Writer,
 		aliasOpt("cd"),
 		displayerType(&displayers.Deployments{}),
 	)
-	AddBoolFlag(deploymentCreate, doctl.ArgAppForceRebuild, "", false, "Force a re-build even if a previous build is eligible for reuse")
+	AddBoolFlag(deploymentCreate, doctl.ArgAppForceRebuild, "", false, "Force a re-build even if a previous build is eligible for reuse.")
 	AddBoolFlag(deploymentCreate, doctl.ArgCommandWait, "", false,
-		"Boolean that specifies whether to wait for apps deployment to complete before returning control to the terminal")
+		"Boolean that specifies whether to wait for the deployment to complete before allowing further terminal input. This can be helpful for scripting.")
+	deploymentCreate.Example = `The following example creates a deployment for an app with the ID ` + "`" + `f81d4fae-7dec-11d0-a765-00a0c91e6bf6` + "`" + `. Additionally, the command returns the app's ID and status: doctl apps create-deployment f81d4fae-7dec-11d0-a765-00a0c91e6bf6 --format ID,Status`
 
-	CmdBuilder(
+	getDeployment := CmdBuilder(
 		cmd,
 		RunAppsGetDeployment,
 		"get-deployment <app id> <deployment id>",
 		"Get a deployment",
-		`Get a deployment for an app.
+		`Gets information about a specific deployment for the given app, including when the app updated and what triggered the deployment (Cause).
 
-Only basic information is included with the text output format. For complete app details including its app specs, use the JSON format.`,
+Only basic information is included with the text output format. For complete app details including an updated app spec, use the `+"`"+`--output`+"`"+` global flag and specify the JSON format.`,
 		Writer,
 		aliasOpt("gd"),
 		displayerType(&displayers.Deployments{}),
 	)
+	getDeployment.Example = `The following example gets information about a deployment with the ID ` + "`" + `418b7972-fc67-41ea-ab4b-6f9477c4f7d8` + "`" + ` for an app with the ID ` + "`" + `f81d4fae-7dec-11d0-a765-00a0c91e6bf6` + "`" + `. Additionally, the command returns the deployment's ID, status, and cause: doctl apps get-deployment f81d4fae-7dec-11d0-a765-00a0c91e6bf6 418b7972-fc67-41ea-ab4b-6f9477c4f7d8 --format ID,Status,Cause`
 
 	CmdBuilder(
 		cmd,
@@ -153,44 +168,105 @@ Only basic information is included with the text output format. For complete app
 		cmd,
 		RunAppsGetLogs,
 		"logs <app id> <component name (defaults to all components)>",
-		"Get logs",
-		`Get component logs for a deployment of an app.
+		"Retrieves logs",
+		`Retrieves component logs for a deployment of an app.
 
-Three types of logs are supported and can be configured with --`+doctl.ArgAppLogType+`:
+Three types of logs are supported and can be specified with the --`+doctl.ArgAppLogType+` flag:
 - build
 - deploy
-- run `,
+- run
+- run_restarted 
+
+For more information about logs, see [How to View Logs](https://www.digitalocean.com/docs/app-platform/how-to/view-logs/).
+`,
 		Writer,
 		aliasOpt("l"),
 	)
-	AddStringFlag(logs, doctl.ArgAppDeployment, "", "", "The deployment ID. Defaults to current deployment.")
-	AddStringFlag(logs, doctl.ArgAppLogType, "", strings.ToLower(string(godo.AppLogTypeRun)), "The type of logs.")
-	AddBoolFlag(logs, doctl.ArgAppLogFollow, "f", false, "Follow logs as they are emitted.")
+	AddStringFlag(logs, doctl.ArgAppDeployment, "", "", "Retrieves logs for a specific deployment ID. Defaults to current deployment.")
+	AddStringFlag(logs, doctl.ArgAppLogType, "", strings.ToLower(string(godo.AppLogTypeRun)), "Retrieves logs for a specific log type. Defaults to run logs.")
+	AddBoolFlag(logs, doctl.ArgAppLogFollow, "f", false, "Returns logs as they are emitted by the app.")
+	AddIntFlag(logs, doctl.ArgAppLogTail, "", -1, "Specifies the number of lines to show from the end of the log.")
+	logs.Example = `The following example retrieves the build logs for the app with the ID ` + "`" + `f81d4fae-7dec-11d0-a765-00a0c91e6bf6` + "`" + ` and the component ` + "`" + `web` + "`" + `: doctl apps logs f81d4fae-7dec-11d0-a765-00a0c91e6bf6 web --type build`
 
-	CmdBuilder(
+	listRegions := CmdBuilder(
 		cmd,
 		RunAppsListRegions,
 		"list-regions",
-		"List App Platform regions",
-		`List all regions supported by App Platform including details about their current availability.`,
+		"Lists available App Platform regions",
+		`Lists all regions supported by App Platform, including details about their current availability.`,
 		Writer,
 		displayerType(&displayers.AppRegions{}),
 	)
+	listRegions.Example = `The following example lists all regions supported by App Platform, including details about their current availability: doctl apps list-regions --format DataCenters,Disabled,Reason`
 
 	propose := CmdBuilder(
 		cmd,
 		RunAppsPropose,
 		"propose",
-		"Propose an app spec",
+		"Proposes an app spec",
 		`Reviews and validates an app specification for a new or existing app. The request returns some information about the proposed app, including app cost and upgrade cost. If an existing app ID is specified, the app spec is treated as a proposed update to the existing app.
 
-Only basic information is included with the text output format. For complete app details including an updated app spec, use the JSON format.`,
+Only basic information is included with the text output format. For complete app details including an updated app spec, use the `+"`"+`--output`+"`"+` global flag and specify the JSON format.`,
 		Writer,
 		aliasOpt("c"),
 		displayerType(&displayers.Apps{}),
 	)
-	AddStringFlag(propose, doctl.ArgAppSpec, "", "", "Path to an app spec in JSON or YAML format. For more information about app specs, see https://www.digitalocean.com/docs/app-platform/concepts/app-spec", requiredOpt())
-	AddStringFlag(propose, doctl.ArgApp, "", "", "An optional existing app ID. If specified, the app spec will be treated as a proposed update to the existing app.")
+	AddStringFlag(propose, doctl.ArgAppSpec, "", "", "Path to an app spec in JSON or YAML format. For more information about app specs, see the [app spec reference](https://www.digitalocean.com/docs/app-platform/concepts/app-spec)", requiredOpt())
+	AddStringFlag(propose, doctl.ArgApp, "", "", "An optional existing app ID. If specified, App Platform treats the spec as a proposed update to the existing app.")
+	propose.Example = `The following example proposes an app spec from the file directory ` + "`" + `src/your-app.yaml` + "`" + ` for a new app: doctl apps propose --spec src/your-app.yaml`
+
+	listAlerts := CmdBuilder(
+		cmd,
+		RunAppListAlerts,
+		"list-alerts <app id>",
+		"Lists alerts on an app",
+		`Lists all alerts associated to an app and its component, such as deployment failures and domain failures.`,
+		Writer,
+		aliasOpt("la"),
+		displayerType(&displayers.AppAlerts{}),
+	)
+	listAlerts.Example = `The following example lists all alerts associated to an app with the ID ` + "`" + `f81d4fae-7dec-11d0-a765-00a0c91e6bf6` + "`" + ` and uses the ` + "`" + `--format` + "`" + ` flag to specifically return the alert ID, trigger, and rule: doctl apps list-alerts f81d4fae-7dec-11d0-a765-00a0c91e6bf6 --format ID,Trigger,Spec.Rule`
+
+	updateAlertDestinations := CmdBuilder(
+		cmd,
+		RunAppUpdateAlertDestinations,
+		"update-alert-destinations <app id> <alert id>",
+		"Updates alert destinations",
+		`Updates alert destinations`,
+		Writer,
+		aliasOpt("uad"),
+		displayerType(&displayers.AppAlerts{}),
+	)
+	updateAlertDestinations.Example = `The following example updates the alert destinations for an app with the ID ` + "`" + `f81d4fae-7dec-11d0-a765-00a0c91e6bf6` + "`" + ` and the alert ID ` + "`" + `f81d4fae-7dec-11d0-a765-00a0c91e6bf6` + "`" + `: doctl apps update-alert-destinations f81d4fae-7dec-11d0-a765-00a0c91e6bf6 f81d4fae-7dec-11d0-a765-00a0c91e6bf6 --alert-destinations src/your-alert-destinations.yaml`
+	AddStringFlag(updateAlertDestinations, doctl.ArgAppAlertDestinations, "", "", "Path to an alert destinations file in JSON or YAML format.")
+
+	listBuildpacks := CmdBuilder(
+		cmd,
+		RunAppListBuildpacks,
+		"list-buildpacks",
+		"Lists buildpacks",
+		`Lists all buildpacks available on App Platform`,
+		Writer,
+		displayerType(&displayers.Buildpacks{}),
+	)
+	listBuildpacks.Example = `The following example lists all buildpacks available on App Platform and uses the ` + "`" + `--format` + "`" + ` flag to specifically return the buildpack ID and version: doctl apps list-buildpacks --format ID,Version`
+
+	upgradeBuildpack := CmdBuilder(
+		cmd,
+		RunAppUpgradeBuildpack,
+		"upgrade-buildpack <app id>",
+		"Upgrades app's buildpack",
+		`Upgrades an app's buildpack. For more information about buildpacks, see the [buildpack reference](https://docs.digitalocean.com/products/app-platform/reference/buildpacks/)`,
+		Writer,
+		displayerType(&displayers.Deployments{}),
+	)
+	AddStringFlag(upgradeBuildpack,
+		doctl.ArgBuildpack, "", "", "The ID of the buildpack to upgrade to. Use the list-buildpacks command to list available buildpacks.", requiredOpt())
+	AddIntFlag(upgradeBuildpack,
+		doctl.ArgMajorVersion, "", 0, "The major version to upgrade to. If empty, the buildpack upgrades to the latest available version.")
+	AddBoolFlag(upgradeBuildpack,
+		doctl.ArgTriggerDeployment, "", true, "Specifies whether to trigger a new deployment to apply the upgrade.")
+	upgradeBuildpack.Example = `The following example upgrades an app's buildpack with the ID ` + "`" + `f81d4fae-7dec-11d0-a765-00a0c91e6bf6` + "`" + ` to the latest available version: doctl apps upgrade-buildpack f81d4fae-7dec-11d0-a765-00a0c91e6bf6 --buildpack f81d4fae-7dec-11d0-a765-00a0c91e6bf6`
 
 	cmd.AddCommand(appsSpec())
 	cmd.AddCommand(appsTier())
@@ -205,15 +281,66 @@ func RunAppsCreate(c *CmdConfig) error {
 		return err
 	}
 
-	appSpec, err := readAppSpec(os.Stdin, specPath)
+	appSpec, err := apps.ReadAppSpec(os.Stdin, specPath)
 	if err != nil {
 		return err
 	}
 
-	app, err := c.Apps().Create(&godo.AppCreateRequest{Spec: appSpec})
+	upsert, err := c.Doit.GetBool(c.NS, doctl.ArgCommandUpsert)
 	if err != nil {
 		return err
 	}
+
+	projectID, err := c.Doit.GetString(c.NS, doctl.ArgProjectID)
+	if err != nil {
+		return err
+	}
+
+	app, err := c.Apps().Create(&godo.AppCreateRequest{Spec: appSpec, ProjectID: projectID})
+	if err != nil {
+		if gerr, ok := err.(*godo.ErrorResponse); ok && gerr.Response.StatusCode == 409 && upsert {
+			notice("App already exists, updating")
+
+			apps, err := c.Apps().List(false)
+			if err != nil {
+				return err
+			}
+
+			id, err := getIDByName(apps, appSpec.Name)
+			if err != nil {
+				return err
+			}
+
+			app, err = c.Apps().Update(id, &godo.AppUpdateRequest{Spec: appSpec})
+			if err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+
+	wait, err := c.Doit.GetBool(c.NS, doctl.ArgCommandWait)
+	if err != nil {
+		return err
+	}
+
+	var errs error
+
+	if wait {
+		apps := c.Apps()
+		notice("App creation is in progress, waiting for app to be running")
+		err := waitForActiveDeployment(apps, app.ID, app.GetPendingDeployment().GetID())
+		if err != nil {
+			errs = multierror.Append(errs, fmt.Errorf("app deployment couldn't enter `running` state: %v", err))
+			if err := c.Display(displayers.Apps{app}); err != nil {
+				errs = multierror.Append(errs, err)
+			}
+			return errs
+		}
+		app, _ = c.Apps().Get(app.ID)
+	}
+
 	notice("App created")
 
 	return c.Display(displayers.Apps{app})
@@ -236,7 +363,12 @@ func RunAppsGet(c *CmdConfig) error {
 
 // RunAppsList lists all apps.
 func RunAppsList(c *CmdConfig) error {
-	apps, err := c.Apps().List()
+	withProjects, err := c.Doit.GetBool(c.NS, doctl.ArgAppWithProjects)
+	if err != nil {
+		return err
+	}
+
+	apps, err := c.Apps().List(withProjects)
 	if err != nil {
 		return err
 	}
@@ -256,7 +388,7 @@ func RunAppsUpdate(c *CmdConfig) error {
 		return err
 	}
 
-	appSpec, err := readAppSpec(os.Stdin, specPath)
+	appSpec, err := apps.ReadAppSpec(os.Stdin, specPath)
 	if err != nil {
 		return err
 	}
@@ -265,6 +397,28 @@ func RunAppsUpdate(c *CmdConfig) error {
 	if err != nil {
 		return err
 	}
+
+	wait, err := c.Doit.GetBool(c.NS, doctl.ArgCommandWait)
+	if err != nil {
+		return err
+	}
+
+	var errs error
+
+	if wait {
+		apps := c.Apps()
+		notice("App update is in progress, waiting for app to be running")
+		err := waitForActiveDeployment(apps, app.ID, app.GetPendingDeployment().GetID())
+		if err != nil {
+			errs = multierror.Append(errs, fmt.Errorf("app deployment couldn't enter `running` state: %v", err))
+			if err := c.Display(displayers.Apps{app}); err != nil {
+				errs = multierror.Append(errs, err)
+			}
+			return errs
+		}
+		app, _ = c.Apps().Get(app.ID)
+	}
+
 	notice("App updated")
 
 	return c.Display(displayers.Apps{app})
@@ -283,7 +437,7 @@ func RunAppsDelete(c *CmdConfig) error {
 	}
 
 	if !force && AskForConfirmDelete("App", 1) != nil {
-		return fmt.Errorf("Operation aborted.")
+		return errOperationAborted
 	}
 
 	err = c.Apps().Delete(id)
@@ -316,14 +470,20 @@ func RunAppsCreateDeployment(c *CmdConfig) error {
 		return err
 	}
 
+	var errs error
+
 	if wait {
 		apps := c.Apps()
-		notice("App deplpyment is in progress, waiting for deployment to be running")
-		deployment, err = waitForAppDeploymentRunning(apps, appID, deployment.ID)
+		notice("App deployment is in progress, waiting for deployment to be running")
+		err := waitForActiveDeployment(apps, appID, deployment.ID)
 		if err != nil {
-			warn("App deplpyment couldn't enter `running` state: %v", err)
-			return c.Display(displayers.Deployments{deployment})
+			errs = multierror.Append(errs, fmt.Errorf("app deployment couldn't enter `running` state: %v", err))
+			if err := c.Display(displayers.Deployments{deployment}); err != nil {
+				errs = multierror.Append(errs, err)
+			}
+			return errs
 		}
+		deployment, _ = c.Apps().GetDeployment(appID, deployment.ID)
 	}
 
 	notice("Deployment created")
@@ -331,12 +491,13 @@ func RunAppsCreateDeployment(c *CmdConfig) error {
 	return c.Display(displayers.Deployments{deployment})
 }
 
-// waitForAppDeploymentRunning waits for a app deployment to be running.
-func waitForAppDeploymentRunning(apps do.AppsService, appID string, deploymentID string) (*godo.Deployment, error) {
-	failCount := 0
+func waitForActiveDeployment(apps do.AppsService, appID string, deploymentID string) error {
+	const maxAttempts = 180
+	attempts := 0
 	printNewLineSet := false
-	for i := 0; ; i++ {
-		if i != 0 {
+
+	for i := 0; i < maxAttempts; i++ {
+		if attempts != 0 {
 			fmt.Fprint(os.Stderr, ".")
 			if !printNewLineSet {
 				printNewLineSet = true
@@ -345,45 +506,22 @@ func waitForAppDeploymentRunning(apps do.AppsService, appID string, deploymentID
 		}
 
 		deployment, err := apps.GetDeployment(appID, deploymentID)
-		if err == nil {
-			failCount = 0
-		} else {
-			// Allow for transient API failures
-			failCount++
-			if failCount >= maxAPIFailures {
-				return nil, err
-			}
+		if err != nil {
+			return err
 		}
 
-		if deployment == nil {
-			time.Sleep(1 * time.Second)
-			continue
+		allSuccessful := deployment.Progress.SuccessSteps == deployment.Progress.TotalSteps
+		if allSuccessful {
+			return nil
 		}
 
-		switch deployment.Phase {
-		case godo.DeploymentPhase_PendingBuild:
-			fallthrough
-		case godo.DeploymentPhase_PendingDeploy:
-			fallthrough
-		case godo.DeploymentPhase_Building:
-			fallthrough
-		case godo.DeploymentPhase_Deploying:
-			time.Sleep(5 * time.Second)
-
-		case godo.DeploymentPhase_Active:
-			return deployment, nil
-
-		case godo.DeploymentPhase_Error:
-			fallthrough
-		case godo.DeploymentPhase_Canceled:
-			fallthrough
-		case godo.DeploymentPhase_Unknown:
-			return deployment, fmt.Errorf("phase: [%s]", deployment.Phase)
-
-		default:
-			return deployment, fmt.Errorf("Unknown phase: [%s]", deployment.Phase)
+		if deployment.Progress.ErrorSteps > 0 {
+			return fmt.Errorf("error deploying app (%s) (deployment ID: %s):\n%s", appID, deployment.ID, godo.Stringify(deployment.Progress))
 		}
+		attempts++
+		time.Sleep(10 * time.Second)
 	}
+	return fmt.Errorf("timeout waiting to app (%s) deployment", appID)
 }
 
 // RunAppsGetDeployment gets a deployment for an app.
@@ -458,6 +596,8 @@ func RunAppsGetLogs(c *CmdConfig) error {
 		logType = godo.AppLogTypeDeploy
 	case strings.ToLower(string(godo.AppLogTypeRun)):
 		logType = godo.AppLogTypeRun
+	case strings.ToLower(string(godo.AppLogTypeRunRestarted)):
+		logType = godo.AppLogTypeRunRestarted
 	default:
 		return fmt.Errorf("Invalid log type %s", logTypeStr)
 	}
@@ -465,8 +605,12 @@ func RunAppsGetLogs(c *CmdConfig) error {
 	if err != nil {
 		return err
 	}
+	logTail, err := c.Doit.GetInt(c.NS, doctl.ArgAppLogTail)
+	if err != nil {
+		return err
+	}
 
-	logs, err := c.Apps().GetLogs(appID, deploymentID, component, logType, logFollow)
+	logs, err := c.Apps().GetLogs(appID, deploymentID, component, logType, logFollow, logTail)
 	if err != nil {
 		return err
 	}
@@ -530,7 +674,7 @@ func RunAppsPropose(c *CmdConfig) error {
 		return err
 	}
 
-	appSpec, err := readAppSpec(os.Stdin, specPath)
+	appSpec, err := apps.ReadAppSpec(os.Stdin, specPath)
 	if err != nil {
 		return err
 	}
@@ -548,52 +692,6 @@ func RunAppsPropose(c *CmdConfig) error {
 	return c.Display(displayers.AppProposeResponse{Res: res})
 }
 
-func readAppSpec(stdin io.Reader, path string) (*godo.AppSpec, error) {
-	var spec io.Reader
-	if path == "-" {
-		spec = stdin
-	} else {
-		specFile, err := os.Open(path) // guardrails-disable-line
-		if err != nil {
-			if os.IsNotExist(err) {
-				return nil, fmt.Errorf("opening app spec: %s does not exist", path)
-			}
-			return nil, fmt.Errorf("opening app spec: %w", err)
-		}
-		defer specFile.Close()
-		spec = specFile
-	}
-
-	byt, err := ioutil.ReadAll(spec)
-	if err != nil {
-		return nil, fmt.Errorf("reading app spec: %w", err)
-	}
-
-	s, err := parseAppSpec(byt)
-	if err != nil {
-		return nil, fmt.Errorf("parsing app spec: %w", err)
-	}
-
-	return s, nil
-}
-
-func parseAppSpec(spec []byte) (*godo.AppSpec, error) {
-	jsonSpec, err := yaml.YAMLToJSON(spec)
-	if err != nil {
-		return nil, err
-	}
-
-	dec := json.NewDecoder(bytes.NewReader(jsonSpec))
-	dec.DisallowUnknownFields()
-
-	var appSpec godo.AppSpec
-	if err := dec.Decode(&appSpec); err != nil {
-		return nil, err
-	}
-
-	return &appSpec, nil
-}
-
 func appsSpec() *Command {
 	cmd := &Command{
 		Command: &cobra.Command{
@@ -609,9 +707,9 @@ Optionally, pass a deployment ID to get the spec of that specific deployment.`, 
 	AddStringFlag(getCmd, doctl.ArgAppDeployment, "", "", "optional: a deployment ID")
 	AddStringFlag(getCmd, doctl.ArgFormat, "", "yaml", `the format to output the spec in; either "yaml" or "json"`)
 
-	validateCmd := CmdBuilder(cmd, RunAppsSpecValidate, "validate <spec file>", "Validate an application spec", `Use this command to check whether a given app spec (YAML or JSON) is valid.
+	validateCmd := cmdBuilderWithInit(cmd, RunAppsSpecValidate, "validate <spec file>", "Validate an application spec", `Use this command to check whether a given app spec (YAML or JSON) is valid.
 
-You may pass - as the filename to read from stdin.`, Writer)
+You may pass - as the filename to read from stdin.`, Writer, false)
 	AddBoolFlag(validateCmd, doctl.ArgSchemaOnly, "", false, "Only validate the spec schema and not the correctness of the spec.")
 
 	return cmd
@@ -667,13 +765,14 @@ func RunAppsSpecGet(c *CmdConfig) error {
 }
 
 // RunAppsSpecValidate validates an app spec file
+// doesn't require auth & connection to the API with doctl.ArgSchemaOnly flag
 func RunAppsSpecValidate(c *CmdConfig) error {
 	if len(c.Args) < 1 {
 		return doctl.NewMissingArgsErr(c.NS)
 	}
 
 	specPath := c.Args[0]
-	appSpec, err := readAppSpec(os.Stdin, specPath)
+	appSpec, err := apps.ReadAppSpec(os.Stdin, specPath)
 	if err != nil {
 		return err
 	}
@@ -683,6 +782,7 @@ func RunAppsSpecValidate(c *CmdConfig) error {
 		return err
 	}
 
+	// validate schema only (offline)
 	if schemaOnly {
 		ymlSpec, err := yaml.Marshal(appSpec)
 		if err != nil {
@@ -692,6 +792,10 @@ func RunAppsSpecValidate(c *CmdConfig) error {
 		return err
 	}
 
+	// validate the spec against the API
+	if err := c.initServices(c); err != nil {
+		return err
+	}
 	res, err := c.Apps().Propose(&godo.AppProposeRequest{
 		Spec: appSpec,
 	})
@@ -727,7 +831,7 @@ func appsTier() *Command {
 		},
 	}
 
-	CmdBuilder(cmd, RunAppsTierList, "list", "List all app tiers", `Use this command to list all the available app tiers.`, Writer)
+	CmdBuilder(cmd, RunAppsTierList, "list", "List all app tiers", `Use this command to list all the available app tiers.`, Writer, aliasOpt("ls"))
 	CmdBuilder(cmd, RunAppsTierGet, "get <tier slug>", "Retrieve an app tier", `Use this command to retrieve information about a specific app tier.`, Writer)
 
 	cmd.AddCommand(appsTierInstanceSize())
@@ -770,7 +874,7 @@ func appsTierInstanceSize() *Command {
 		},
 	}
 
-	CmdBuilder(cmd, RunAppsTierInstanceSizeList, "list", "List all app instance sizes", `Use this command to list all the available app instance sizes.`, Writer)
+	CmdBuilder(cmd, RunAppsTierInstanceSizeList, "list", "List all app instance sizes", `Use this command to list all the available app instance sizes.`, Writer, aliasOpt("ls"))
 	CmdBuilder(cmd, RunAppsTierInstanceSizeGet, "get <instance size slug>", "Retrieve an app instance size", `Use this command to retrieve information about a specific app instance size.`, Writer)
 
 	return cmd
@@ -800,4 +904,147 @@ func RunAppsTierInstanceSizeGet(c *CmdConfig) error {
 	}
 
 	return c.Display(displayers.AppInstanceSizes([]*godo.AppInstanceSize{instanceSize}))
+}
+
+// RunAppListAlerts gets configured alerts on an app
+func RunAppListAlerts(c *CmdConfig) error {
+	if len(c.Args) < 1 {
+		return doctl.NewMissingArgsErr(c.NS)
+	}
+
+	appID := c.Args[0]
+
+	alerts, err := c.Apps().ListAlerts(appID)
+	if err != nil {
+		return err
+	}
+	return c.Display(displayers.AppAlerts(alerts))
+}
+
+func RunAppUpdateAlertDestinations(c *CmdConfig) error {
+	if len(c.Args) < 2 {
+		return doctl.NewMissingArgsErr(c.NS)
+	}
+
+	appID := c.Args[0]
+	alertID := c.Args[1]
+
+	alertDestinationsPath, err := c.Doit.GetString(c.NS, doctl.ArgAppAlertDestinations)
+	if err != nil {
+		return err
+	}
+	update, err := readAppAlertDestination(os.Stdin, alertDestinationsPath)
+	if err != nil {
+		return err
+	}
+
+	alert, err := c.Apps().UpdateAlertDestinations(appID, alertID, update)
+	if err != nil {
+		return err
+	}
+	return c.Display(displayers.AppAlerts([]*godo.AppAlert{alert}))
+}
+
+func readAppAlertDestination(stdin io.Reader, path string) (*godo.AlertDestinationUpdateRequest, error) {
+	var alertDestinations io.Reader
+	if path == "-" {
+		alertDestinations = stdin
+	} else {
+		alertDestinationsFile, err := os.Open(path) // guardrails-disable-line
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil, fmt.Errorf("opening app alert destinations: %s does not exist", path)
+			}
+			return nil, fmt.Errorf("opening app alert destinations: %w", err)
+		}
+		defer alertDestinationsFile.Close()
+		alertDestinations = alertDestinationsFile
+	}
+
+	byt, err := io.ReadAll(alertDestinations)
+	if err != nil {
+		return nil, fmt.Errorf("reading app alert destinations: %w", err)
+	}
+
+	s, err := parseAppAlert(byt)
+	if err != nil {
+		return nil, fmt.Errorf("parsing app alert destinations: %w", err)
+	}
+
+	return s, nil
+}
+
+func parseAppAlert(destinations []byte) (*godo.AlertDestinationUpdateRequest, error) {
+	jsonAlertDestinations, err := yaml.YAMLToJSON(destinations)
+	if err != nil {
+		return nil, err
+	}
+
+	dec := json.NewDecoder(bytes.NewReader(jsonAlertDestinations))
+	dec.DisallowUnknownFields()
+
+	var alertDestinations godo.AlertDestinationUpdateRequest
+	if err := dec.Decode(&alertDestinations); err != nil {
+		return nil, err
+	}
+
+	return &alertDestinations, nil
+}
+
+// RunAppListBuildpacks lists buildpacks
+func RunAppListBuildpacks(c *CmdConfig) error {
+	bps, err := c.Apps().ListBuildpacks()
+	if err != nil {
+		return err
+	}
+	return c.Display(displayers.Buildpacks(bps))
+}
+
+// RunAppUpgradeBuildpack upgrades a buildpack for an app
+func RunAppUpgradeBuildpack(c *CmdConfig) error {
+	if len(c.Args) < 1 {
+		return doctl.NewMissingArgsErr(c.NS)
+	}
+
+	appID := c.Args[0]
+	buildpack, err := c.Doit.GetString(c.NS, doctl.ArgBuildpack)
+	if err != nil {
+		return err
+	}
+	majorVersion, err := c.Doit.GetInt(c.NS, doctl.ArgMajorVersion)
+	if err != nil {
+		return err
+	}
+	triggerDeployment, err := c.Doit.GetBool(c.NS, doctl.ArgTriggerDeployment)
+	if err != nil {
+		return err
+	}
+
+	components, dep, err := c.Apps().UpgradeBuildpack(appID, godo.UpgradeBuildpackOptions{
+		BuildpackID:       buildpack,
+		MajorVersion:      int32(majorVersion),
+		TriggerDeployment: triggerDeployment,
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(os.Stderr, "upgraded buildpack %s. %d components were affected: %v.\n", buildpack, len(components), components)
+
+	if dep != nil {
+		fmt.Fprint(os.Stderr, "triggered a new deployment to apply the upgrade:\n\n")
+		return c.Display(displayers.Deployments([]*godo.Deployment{dep}))
+	}
+
+	return nil
+}
+
+func getIDByName(apps []*godo.App, name string) (string, error) {
+	for _, app := range apps {
+		if app.Spec.Name == name {
+			return app.ID, nil
+		}
+	}
+
+	return "", fmt.Errorf("app not found")
 }

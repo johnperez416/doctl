@@ -37,6 +37,7 @@ func (clusters *KubernetesClusters) Cols() []string {
 		"Region",
 		"Version",
 		"AutoUpgrade",
+		"HAControlPlane",
 		"Status",
 		"Endpoint",
 		"IPv4",
@@ -62,25 +63,26 @@ func (clusters *KubernetesClusters) ColMap() map[string]string {
 		}
 	}
 	return map[string]string{
-		"ID":            "ID",
-		"Name":          "Name",
-		"Region":        "Region",
-		"Version":       "Version",
-		"AutoUpgrade":   "Auto Upgrade",
-		"ClusterSubnet": "Cluster Subnet",
-		"ServiceSubnet": "Service Subnet",
-		"IPv4":          "IPv4",
-		"Endpoint":      "Endpoint",
-		"Tags":          "Tags",
-		"Status":        "Status",
-		"Created":       "Created At",
-		"Updated":       "Updated At",
-		"NodePools":     "Node Pools",
+		"ID":             "ID",
+		"Name":           "Name",
+		"Region":         "Region",
+		"Version":        "Version",
+		"AutoUpgrade":    "Auto Upgrade",
+		"HAControlPlane": "HA Control Plane",
+		"ClusterSubnet":  "Cluster Subnet",
+		"ServiceSubnet":  "Service Subnet",
+		"IPv4":           "IPv4",
+		"Endpoint":       "Endpoint",
+		"Tags":           "Tags",
+		"Status":         "Status",
+		"Created":        "Created At",
+		"Updated":        "Updated At",
+		"NodePools":      "Node Pools",
 	}
 }
 
-func (clusters *KubernetesClusters) KV() []map[string]interface{} {
-	out := make([]map[string]interface{}, 0, len(clusters.KubernetesClusters))
+func (clusters *KubernetesClusters) KV() []map[string]any {
+	out := make([]map[string]any, 0, len(clusters.KubernetesClusters))
 
 	for _, cluster := range clusters.KubernetesClusters {
 		tags := strings.Join(cluster.Tags, ",")
@@ -92,21 +94,22 @@ func (clusters *KubernetesClusters) KV() []map[string]interface{} {
 			cluster.Status = new(godo.KubernetesClusterStatus)
 		}
 
-		o := map[string]interface{}{
-			"ID":            cluster.ID,
-			"Name":          cluster.Name,
-			"Region":        cluster.RegionSlug,
-			"Version":       cluster.VersionSlug,
-			"AutoUpgrade":   cluster.AutoUpgrade,
-			"ClusterSubnet": cluster.ClusterSubnet,
-			"ServiceSubnet": cluster.ServiceSubnet,
-			"IPv4":          cluster.IPv4,
-			"Endpoint":      cluster.Endpoint,
-			"Tags":          tags,
-			"Status":        cluster.Status.State,
-			"Created":       cluster.CreatedAt,
-			"Updated":       cluster.UpdatedAt,
-			"NodePools":     strings.Join(nodePools, " "),
+		o := map[string]any{
+			"ID":             cluster.ID,
+			"Name":           cluster.Name,
+			"Region":         cluster.RegionSlug,
+			"Version":        cluster.VersionSlug,
+			"AutoUpgrade":    cluster.AutoUpgrade,
+			"HAControlPlane": cluster.HA,
+			"ClusterSubnet":  cluster.ClusterSubnet,
+			"ServiceSubnet":  cluster.ServiceSubnet,
+			"IPv4":           cluster.IPv4,
+			"Endpoint":       cluster.Endpoint,
+			"Tags":           tags,
+			"Status":         cluster.Status.State,
+			"Created":        cluster.CreatedAt,
+			"Updated":        cluster.UpdatedAt,
+			"NodePools":      strings.Join(nodePools, " "),
 		}
 		out = append(out, o)
 	}
@@ -150,8 +153,8 @@ func (nodePools *KubernetesNodePools) ColMap() map[string]string {
 	}
 }
 
-func (nodePools *KubernetesNodePools) KV() []map[string]interface{} {
-	out := make([]map[string]interface{}, 0, len(nodePools.KubernetesNodePools))
+func (nodePools *KubernetesNodePools) KV() []map[string]any {
+	out := make([]map[string]any, 0, len(nodePools.KubernetesNodePools))
 
 	for _, nodePools := range nodePools.KubernetesNodePools {
 		tags := strings.Join(nodePools.Tags, ",")
@@ -160,7 +163,7 @@ func (nodePools *KubernetesNodePools) KV() []map[string]interface{} {
 			nodes = append(nodes, node.Name)
 		}
 
-		o := map[string]interface{}{
+		o := map[string]any{
 			"ID":     nodePools.ID,
 			"Name":   nodePools.Name,
 			"Size":   nodePools.Size,
@@ -190,6 +193,7 @@ func (versions *KubernetesVersions) Cols() []string {
 	return []string{
 		"Slug",
 		"KubernetesVersion",
+		"SupportedFeatures",
 	}
 }
 
@@ -197,17 +201,19 @@ func (versions *KubernetesVersions) ColMap() map[string]string {
 	return map[string]string{
 		"Slug":              "Slug",
 		"KubernetesVersion": "Kubernetes Version",
+		"SupportedFeatures": "Supported Features",
 	}
 }
 
-func (versions *KubernetesVersions) KV() []map[string]interface{} {
-	out := make([]map[string]interface{}, 0, len(versions.KubernetesVersions))
+func (versions *KubernetesVersions) KV() []map[string]any {
+	out := make([]map[string]any, 0, len(versions.KubernetesVersions))
 
 	for _, version := range versions.KubernetesVersions {
 
-		o := map[string]interface{}{
+		o := map[string]any{
 			"Slug":              version.KubernetesVersion.Slug,
 			"KubernetesVersion": version.KubernetesVersion.KubernetesVersion,
+			"SupportedFeatures": strings.Join(version.KubernetesVersion.SupportedFeatures, ", "),
 		}
 		out = append(out, o)
 	}
@@ -239,12 +245,12 @@ func (regions *KubernetesRegions) ColMap() map[string]string {
 	}
 }
 
-func (regions *KubernetesRegions) KV() []map[string]interface{} {
-	out := make([]map[string]interface{}, 0, len(regions.KubernetesRegions))
+func (regions *KubernetesRegions) KV() []map[string]any {
+	out := make([]map[string]any, 0, len(regions.KubernetesRegions))
 
 	for _, region := range regions.KubernetesRegions {
 
-		o := map[string]interface{}{
+		o := map[string]any{
 			"Slug": region.KubernetesRegion.Slug,
 			"Name": region.KubernetesRegion.Name,
 		}
@@ -278,12 +284,12 @@ func (nodeSizes *KubernetesNodeSizes) ColMap() map[string]string {
 	}
 }
 
-func (nodeSizes *KubernetesNodeSizes) KV() []map[string]interface{} {
-	out := make([]map[string]interface{}, 0, len(nodeSizes.KubernetesNodeSizes))
+func (nodeSizes *KubernetesNodeSizes) KV() []map[string]any {
+	out := make([]map[string]any, 0, len(nodeSizes.KubernetesNodeSizes))
 
 	for _, size := range nodeSizes.KubernetesNodeSizes {
 
-		o := map[string]interface{}{
+		o := map[string]any{
 			"Slug": size.KubernetesNodeSize.Slug,
 			"Name": size.KubernetesNodeSize.Name,
 		}
@@ -319,16 +325,13 @@ func (ar *KubernetesAssociatedResources) ColMap() map[string]string {
 	}
 }
 
-func (ar *KubernetesAssociatedResources) KV() []map[string]interface{} {
-	out := make([]map[string]interface{}, 0, 1)
-
-	o := map[string]interface{}{
+func (ar *KubernetesAssociatedResources) KV() []map[string]any {
+	o := map[string]any{
 		"Volumes":         flattenAssociatedResourceIDs(ar.KubernetesAssociatedResources.Volumes),
 		"VolumeSnapshots": flattenAssociatedResourceIDs(ar.KubernetesAssociatedResources.VolumeSnapshots),
 		"LoadBalancers":   flattenAssociatedResourceIDs(ar.KubernetesAssociatedResources.LoadBalancers),
 	}
-	out = append(out, o)
-	return out
+	return []map[string]any{o}
 }
 
 func flattenAssociatedResourceIDs(resources []*godo.AssociatedResource) (out []string) {

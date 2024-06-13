@@ -31,25 +31,27 @@ func (a *Account) JSON(out io.Writer) error {
 
 func (a *Account) Cols() []string {
 	return []string{
-		"Email", "DropletLimit", "EmailVerified", "UUID", "Status",
+		"Email", "Team", "DropletLimit", "EmailVerified", "UUID", "Status",
 	}
 }
 
 func (a *Account) ColMap() map[string]string {
 	return map[string]string{
-		"Email": "Email", "DropletLimit": "Droplet Limit", "EmailVerified": "Email Verified",
-		"UUID": "UUID", "Status": "Status",
+		"Email": "User Email", "DropletLimit": "Droplet Limit", "EmailVerified": "Email Verified",
+		"UUID": "User UUID", "Status": "Status", "Team": "Team", "TeamUUID": "Team UUID",
 	}
 }
 
-func (a *Account) KV() []map[string]interface{} {
-	out := []map[string]interface{}{}
-	x := map[string]interface{}{
+func (a *Account) KV() []map[string]any {
+	x := map[string]any{
 		"Email": a.Email, "DropletLimit": a.DropletLimit,
 		"EmailVerified": a.EmailVerified, "UUID": a.UUID,
 		"Status": a.Status,
 	}
-	out = append(out, x)
+	if a.Team != nil {
+		x["Team"] = a.Team.Name
+		x["TeamUUID"] = a.Team.UUID
+	}
 
-	return out
+	return []map[string]any{x}
 }

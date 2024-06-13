@@ -39,11 +39,11 @@ func (d *Domain) ColMap() map[string]string {
 	}
 }
 
-func (d *Domain) KV() []map[string]interface{} {
-	out := []map[string]interface{}{}
+func (d *Domain) KV() []map[string]any {
+	out := make([]map[string]any, 0, len(d.Domains))
 
 	for _, do := range d.Domains {
-		o := map[string]interface{}{
+		o := map[string]any{
 			"Domain": do.Name, "TTL": do.TTL,
 		}
 		out = append(out, o)
@@ -54,6 +54,7 @@ func (d *Domain) KV() []map[string]interface{} {
 
 type DomainRecord struct {
 	DomainRecords do.DomainRecords
+	Short         bool
 }
 
 func (dr *DomainRecord) JSON(out io.Writer) error {
@@ -61,26 +62,42 @@ func (dr *DomainRecord) JSON(out io.Writer) error {
 }
 
 func (dr *DomainRecord) Cols() []string {
-	return []string{
+	defaultCols := []string{
 		"ID", "Type", "Name", "Data", "Priority", "Port", "TTL", "Weight",
 	}
+
+	if dr.Short {
+		return defaultCols
+	}
+
+	return append(defaultCols, "Flags", "Tag")
 }
 
 func (dr *DomainRecord) ColMap() map[string]string {
-	return map[string]string{
+	defaultColMap := map[string]string{
 		"ID": "ID", "Type": "Type", "Name": "Name", "Data": "Data",
 		"Priority": "Priority", "Port": "Port", "TTL": "TTL", "Weight": "Weight",
 	}
+
+	if dr.Short {
+		return defaultColMap
+	}
+
+	defaultColMap["Flags"] = "Flags"
+	defaultColMap["Tag"] = "Tag"
+
+	return defaultColMap
 }
 
-func (dr *DomainRecord) KV() []map[string]interface{} {
-	out := []map[string]interface{}{}
+func (dr *DomainRecord) KV() []map[string]any {
+	out := make([]map[string]any, 0, len(dr.DomainRecords))
 
 	for _, d := range dr.DomainRecords {
-		o := map[string]interface{}{
+		o := map[string]any{
 			"ID": d.ID, "Type": d.Type, "Name": d.Name,
 			"Data": d.Data, "Priority": d.Priority,
 			"Port": d.Port, "TTL": d.TTL, "Weight": d.Weight,
+			"Flags": d.Flags, "Tag": d.Tag,
 		}
 		out = append(out, o)
 	}

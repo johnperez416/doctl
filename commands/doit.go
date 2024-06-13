@@ -19,15 +19,20 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/digitalocean/doctl"
 	"github.com/fatih/color"
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 const (
-	defaultConfigName = "config.yaml" // default name of config file
+	defaultConfigName    = "config.yaml" // default name of config file
+	manageResourcesGroup = "manageResources"
+	configureDoctlGroup  = "configureDoctl"
+	viewBillingGroup     = "viewBilling"
 )
 
 var (
@@ -53,6 +58,13 @@ var (
 	Trace bool
 	//Verbose toggle verbose output on and off
 	Verbose bool
+	//Interactive toggle interactive behavior
+	Interactive bool
+
+	// Retry settings to pass through to godo.RetryConfig
+	RetryMax     int
+	RetryWaitMax int
+	RetryWaitMin int
 
 	requiredColor = color.New(color.Bold).SprintfFunc()
 )
@@ -77,8 +89,31 @@ func init() {
 	viper.BindPFlag("output", rootPFlagSet.Lookup(doctl.ArgOutput))
 
 	rootPFlagSet.StringVarP(&Context, doctl.ArgContext, "", "", "Specify a custom authentication context name")
+	DoitCmd.RegisterFlagCompletionFunc(doctl.ArgContext, func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return getAuthContextList(), cobra.ShellCompDirectiveNoFileComp
+	})
+
 	rootPFlagSet.BoolVarP(&Trace, "trace", "", false, "Show a log of network activity while performing a command")
 	rootPFlagSet.BoolVarP(&Verbose, doctl.ArgVerbose, "v", false, "Enable verbose output")
+
+	interactive := isTerminal(os.Stdout) && isTerminal(os.Stderr)
+	interactiveHelpText := "Enable interactive behavior. Defaults to true if the terminal supports it"
+	if !interactive {
+		// this is automatically added if interactive == true
+		interactiveHelpText += " (default false)"
+	}
+	rootPFlagSet.BoolVarP(&Interactive, doctl.ArgInteractive, "", interactive, interactiveHelpText)
+
+	rootPFlagSet.IntVar(&RetryMax, "http-retry-max", 5, "Set maximum number of retries for requests that fail with a 429 or 500-level error")
+	viper.BindPFlag("http-retry-max", rootPFlagSet.Lookup("http-retry-max"))
+
+	rootPFlagSet.IntVar(&RetryWaitMax, "http-retry-wait-max", 30, "Set the minimum number of seconds to wait before retrying a failed request")
+	viper.BindPFlag("http-retry-wait-max", rootPFlagSet.Lookup("http-retry-wait-max"))
+	DoitCmd.PersistentFlags().MarkHidden("http-retry-wait-max")
+
+	rootPFlagSet.IntVar(&RetryWaitMin, "http-retry-wait-min", 1, "Set the maximum number of seconds to wait before retrying a failed request")
+	viper.BindPFlag("http-retry-wait-min", rootPFlagSet.Lookup("http-retry-wait-min"))
+	DoitCmd.PersistentFlags().MarkHidden("http-retry-wait-min")
 
 	addCommands()
 
@@ -96,6 +131,7 @@ func initConfig() {
 
 	viper.SetDefault("output", "text")
 	viper.SetDefault(doctl.ArgContext, doctl.ArgDefaultContext)
+	Context = strings.ToLower(Context)
 
 	if _, err := os.Stat(cfgFile); err == nil {
 		if err := viper.ReadInConfig(); err != nil {
@@ -123,20 +159,26 @@ func configHome() string {
 // Execute executes the current command using DoitCmd.
 func Execute() {
 	if err := DoitCmd.Execute(); err != nil {
-		fmt.Println(err)
+		if !strings.Contains(err.Error(), "unknown command") {
+			fmt.Println(err)
+		}
 		os.Exit(-1)
 	}
 }
 
 // AddCommands adds sub commands to the base command.
 func addCommands() {
+
+	DoitCmd.AddGroup(&cobra.Group{ID: manageResourcesGroup, Title: "Manage DigitalOcean Resources:"})
+	DoitCmd.AddGroup(&cobra.Group{ID: configureDoctlGroup, Title: "Configure doctl:"})
+	DoitCmd.AddGroup(&cobra.Group{ID: viewBillingGroup, Title: "View Billing:"})
+
 	DoitCmd.AddCommand(Account())
 	DoitCmd.AddCommand(Apps())
 	DoitCmd.AddCommand(Auth())
 	DoitCmd.AddCommand(Balance())
 	DoitCmd.AddCommand(BillingHistory())
 	DoitCmd.AddCommand(Invoices())
-	DoitCmd.AddCommand(Completion())
 	DoitCmd.AddCommand(computeCmd())
 	DoitCmd.AddCommand(Kubernetes())
 	DoitCmd.AddCommand(Databases())
@@ -145,14 +187,17 @@ func addCommands() {
 	DoitCmd.AddCommand(Registry())
 	DoitCmd.AddCommand(VPCs())
 	DoitCmd.AddCommand(OneClicks())
+	DoitCmd.AddCommand(Monitoring())
+	DoitCmd.AddCommand(Serverless())
 }
 
 func computeCmd() *Command {
 	cmd := &Command{
 		Command: &cobra.Command{
-			Use:   "compute",
-			Short: "Display commands that manage infrastructure",
-			Long:  `The subcommands under ` + "`" + `doctl compute` + "`" + ` are for managing DigitalOcean resources.`,
+			Use:     "compute",
+			Short:   "Display commands that manage infrastructure",
+			Long:    `The subcommands under ` + "`" + `doctl compute` + "`" + ` are for managing DigitalOcean resources.`,
+			GroupID: manageResourcesGroup,
 		},
 	}
 
@@ -163,8 +208,8 @@ func computeCmd() *Command {
 	cmd.AddCommand(Droplet())
 	cmd.AddCommand(Domain())
 	cmd.AddCommand(Firewall())
-	cmd.AddCommand(FloatingIP())
-	cmd.AddCommand(FloatingIPAction())
+	cmd.AddCommand(ReservedIP())
+	cmd.AddCommand(ReservedIPAction())
 	cmd.AddCommand(Images())
 	cmd.AddCommand(ImageAction())
 	cmd.AddCommand(LoadBalancer())
@@ -198,9 +243,23 @@ func requiredOpt() flagOpt {
 	}
 }
 
+func hiddenFlag() flagOpt {
+	return func(c *Command, name, key string) {
+		c.Flags().MarkHidden(name)
+	}
+}
+
 // AddStringFlag adds a string flag to a command.
 func AddStringFlag(cmd *Command, name, shorthand, dflt, desc string, opts ...flagOpt) {
 	fn := flagName(cmd, name)
+	// flagName only supports nesting three levels deep. We need to force the
+	// app dev config set/unset --dev-config flag to be nested deeper.
+	// i.e dev.config.set.dev-config over config.set.dev-config
+	// This prevents a conflict with the base config setting.
+	if name == doctl.ArgAppDevConfig && !strings.HasPrefix(fn, appDevConfigFileNamespace+".") {
+		fn = fmt.Sprintf("%s.%s", appDevConfigFileNamespace, fn)
+	}
+
 	cmd.Flags().StringP(name, shorthand, dflt, desc)
 
 	for _, o := range opts {
@@ -254,16 +313,40 @@ func AddStringMapStringFlag(cmd *Command, name, shorthand string, def map[string
 	}
 }
 
+// AddDurationFlag adds a duration flag to a command.
+func AddDurationFlag(cmd *Command, name, shorthand string, def time.Duration, desc string, opts ...flagOpt) {
+	fn := flagName(cmd, name)
+	cmd.Flags().DurationP(name, shorthand, def, desc)
+	viper.BindPFlag(fn, cmd.Flags().Lookup(name))
+
+	for _, o := range opts {
+		o(cmd, name, fn)
+	}
+}
+
 func flagName(cmd *Command, name string) string {
 	if cmd.Parent() != nil {
-		return fmt.Sprintf("%s.%s.%s", cmd.Parent().Name(), cmd.Name(), name)
+		p := cmd.Parent().Name()
+		if cmd.overrideNS != "" {
+			p = cmd.overrideNS
+		}
+		return fmt.Sprintf("%s.%s.%s", p, cmd.Name(), name)
 	}
+
 	return fmt.Sprintf("%s.%s", cmd.Name(), name)
 }
 
-func cmdNS(cmd *cobra.Command) string {
+func cmdNS(cmd *Command) string {
 	if cmd.Parent() != nil {
+		if cmd.overrideNS != "" {
+			return fmt.Sprintf("%s.%s", cmd.overrideNS, cmd.Name())
+		}
+
 		return fmt.Sprintf("%s.%s", cmd.Parent().Name(), cmd.Name())
 	}
-	return fmt.Sprintf("%s", cmd.Name())
+	return cmd.Name()
+}
+
+func isTerminal(f *os.File) bool {
+	return isatty.IsTerminal(f.Fd()) || isatty.IsCygwinTerminal(f.Fd())
 }
