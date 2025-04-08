@@ -10,7 +10,7 @@
 #
 # See https://docs.docker.com/develop/develop-images/dockerfile_best-practices/
 #  for guidance on the style of this Dockerfile
-FROM ubuntu:focal as builder
+FROM ubuntu:20.04 as builder
 
 RUN apt-get update && apt-get install --yes \
         curl \
@@ -52,7 +52,7 @@ RUN curl -L $(curl -H 'X-Ubuntu-Series: 16' 'https://api.snapcraft.io/api/v1/sna
         cd /snap/bin && \
         ln -s /snap/go/current/bin/go
 
-FROM ubuntu:focal
+FROM ubuntu:20.04
 COPY --from=builder /snap /snap
 
 # Install Snap build-time dependencies & generate locale
